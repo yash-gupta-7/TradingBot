@@ -72,7 +72,12 @@ class BacktestEngine:
             if not self._within_trading_hours(now):
                 continue
 
-            window_5m = self.df_5m[self.df_5m.index <= now]
+            # A 5-minute bin is left-labeled (label L covers [L, L+5min)) and
+            # only fully closed once `now` reaches L+5min -- filtering by
+            # `index <= now` would include the still-forming bin whose label
+            # equals `now`'s 5-minute floor, which was aggregated from the
+            # full upfront resample and so leaks future 1-minute bars.
+            window_5m = self.df_5m[self.df_5m.index + pd.Timedelta(minutes=5) <= now]
             if len(window_5m) < warmup:
                 continue
 
