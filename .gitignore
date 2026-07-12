@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+.env
+kite/.access_token
+.venv/
+*.egg-info/

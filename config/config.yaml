@@ -1,0 +1,50 @@
+instrument:
+  index_symbol: "SENSEX"
+  exchange: "BSE"
+  lot_size: 20  # PLACEHOLDER — set to the real SENSEX weekly options lot size before live use
+
+timeframes:
+  primary: "minute"
+  higher: "5minute"
+
+indicators:
+  supertrend_fast:
+    length: 10
+    multiplier: 1
+  supertrend_slow:
+    length: 10
+    multiplier: 3
+  ema_fast_length: 9
+  ema_slow_length: 15
+  ema_slope_lookback: 3
+  ema_slope_threshold: 0.05
+  rsi_length: 14
+  rsi_midline: 50
+  rsi_overbought: 80
+  rsi_oversold: 20
+  adx_length: 14
+  adx_threshold: 25
+  atr_length: 14
+  atr_sma_length: 14
+  volume_lookback: 20
+  volume_multiplier: 1.5
+
+risk:
+  risk_pct: 1.0
+  reward_risk_ratio: 2.0
+  atr_stop_multiplier: 1.5
+  breakeven_r: 1.0
+  trail_start_r: 1.5
+  max_trades_per_day: 5
+  max_consecutive_losses: 3
+  max_daily_loss_pct: 2.0
+
+trading_hours:
+  windows:
+    - ["09:25", "11:30"]
+    - ["13:30", "15:00"]
+  square_off_time: "15:20"
+
+backtest:
+  initial_capital: 100000
+  warmup_bars: 60
