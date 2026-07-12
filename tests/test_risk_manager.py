@@ -1,6 +1,6 @@
 import pandas as pd
 
-from risk.risk_manager import calculate_stop_loss, calculate_position_size, calculate_target
+from risk.risk_manager import calculate_stop_loss, calculate_position_size, calculate_target, TrailingStopTracker
 
 
 def test_stop_loss_buy_uses_wider_of_prev_low_and_atr_stop():
@@ -45,3 +45,31 @@ def test_target_buy_is_entry_plus_rr_times_risk():
 def test_target_sell_is_entry_minus_rr_times_risk():
     target = calculate_target("SELL_PUT", entry_price=100.0, stop_price=110.0, rr_ratio=2.0)
     assert target == 80.0
+
+
+def test_trailing_stop_moves_to_breakeven_at_1r():
+    # entry 100, stop 90 -> 1R = 10. Price at 110 = 1R reached.
+    tracker = TrailingStopTracker("BUY_CALL", entry_price=100.0, initial_stop=90.0, breakeven_r=1.0, trail_start_r=1.5)
+    stop = tracker.update(price=110.0, supertrend_fast_value=95.0)
+    assert stop == 100.0  # moved to cost, not yet trailing
+
+
+def test_trailing_stop_trails_via_supertrend_after_1_5r():
+    tracker = TrailingStopTracker("BUY_CALL", entry_price=100.0, initial_stop=90.0, breakeven_r=1.0, trail_start_r=1.5)
+    tracker.update(price=110.0, supertrend_fast_value=95.0)  # 1R: breakeven
+    stop = tracker.update(price=115.0, supertrend_fast_value=108.0)  # 1.5R: trail
+    assert stop == 108.0
+
+
+def test_trailing_stop_never_moves_backward_for_buy():
+    tracker = TrailingStopTracker("BUY_CALL", entry_price=100.0, initial_stop=90.0, breakeven_r=1.0, trail_start_r=1.5)
+    tracker.update(price=115.0, supertrend_fast_value=108.0)  # trailing active, stop=108
+    stop = tracker.update(price=116.0, supertrend_fast_value=105.0)  # supertrend dipped
+    assert stop == 108.0  # does not retreat
+
+
+def test_trailing_stop_sell_put_direction():
+    tracker = TrailingStopTracker("SELL_PUT", entry_price=100.0, initial_stop=110.0, breakeven_r=1.0, trail_start_r=1.5)
+    tracker.update(price=90.0, supertrend_fast_value=95.0)  # 1R down: breakeven
+    stop = tracker.update(price=85.0, supertrend_fast_value=92.0)  # 1.5R: trail
+    assert stop == 92.0
