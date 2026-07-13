@@ -30,8 +30,11 @@ def compute_metrics(trades: list[Trade]) -> dict:
     profit_factor = gross_profit / gross_loss if gross_loss > 0 else float("inf") if gross_profit > 0 else 0
 
     equity_curve = list(np.cumsum(pnls))
-    running_max = np.maximum.accumulate(equity_curve)
-    drawdowns = running_max - np.array(equity_curve)
+    # Seed with a 0 baseline so a losing streak from account inception counts
+    # toward drawdown (equity_curve itself is unseeded to preserve its len(trades) contract).
+    equity_from_zero = np.concatenate(([0.0], equity_curve))
+    running_max = np.maximum.accumulate(equity_from_zero)
+    drawdowns = running_max - equity_from_zero
     max_drawdown = float(drawdowns.max()) if len(drawdowns) else 0
 
     returns = pd.Series(pnls)

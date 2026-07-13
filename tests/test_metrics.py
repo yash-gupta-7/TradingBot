@@ -67,6 +67,20 @@ def test_compute_metrics_drawdown_sharpe_expectancy():
     assert m["expectancy"] == pytest_approx(800 / 3)
 
 
+def test_compute_metrics_drawdown_underwater_from_start():
+    # pnls: [-100, 50]
+    # equity_from_zero (seeded with 0 baseline): [0, -100, -50]
+    # running_max: [0, 0, 0]
+    # drawdowns: [0, 100, 50]
+    # max_drawdown: 100 (peak 0 to trough -100, i.e. losing from account inception)
+    trades = [
+        _trade("2026-01-05 10:00", "2026-01-05 10:30", "BUY_CALL", 100, 95),  # -100
+        _trade("2026-01-05 11:00", "2026-01-05 11:20", "BUY_CALL", 100, 102.5),  # +50
+    ]
+    m = compute_metrics(trades)
+    assert m["max_drawdown"] == pytest_approx(100.0)
+
+
 def test_compute_metrics_monthly_returns_single_month():
     # All trades in same month; monthly_returns should be {"2026-01": 800.0}
     trades = [
