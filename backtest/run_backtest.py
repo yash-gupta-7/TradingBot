@@ -12,12 +12,11 @@ from backtest.metrics import compute_metrics
 from utils.config import load_config
 
 
-def _resolve_sensex_token(kite) -> int:
-    cfg = load_config()["instrument"]
-    instruments = kite.instruments(cfg["exchange"])
+def _resolve_sensex_token(kite, instrument_cfg: dict) -> int:
+    instruments = kite.instruments(instrument_cfg["exchange"])
     match = next(
         i for i in instruments
-        if i["tradingsymbol"] == cfg["index_symbol"] and i["segment"] == "INDICES"
+        if i["tradingsymbol"] == instrument_cfg["index_symbol"] and i["segment"] == "INDICES"
     )
     return match["instrument_token"]
 
@@ -31,7 +30,7 @@ def main() -> None:
 
     cfg = load_config(args.config)
     kite = get_kite_client()
-    token = _resolve_sensex_token(kite)
+    token = _resolve_sensex_token(kite, cfg["instrument"])
 
     df_1m = fetch_historical(kite, token, args.from_date, args.to_date, interval="minute")
     print(f"Fetched {len(df_1m)} 1-minute candles from {args.from_date} to {args.to_date}")
