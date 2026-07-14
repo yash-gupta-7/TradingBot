@@ -11,35 +11,40 @@ def supertrend(df: pd.DataFrame, length: int, multiplier: float) -> pd.DataFrame
     atr = calculate_atr(df, length)
     hl2 = (high + low) / 2
 
-    upperband = hl2 + multiplier * atr
-    lowerband = hl2 - multiplier * atr
+    upperband = (hl2 + multiplier * atr).to_numpy()
+    lowerband = (hl2 - multiplier * atr).to_numpy()
+    close_arr = close.to_numpy()
+    n = len(df)
     final_upper = upperband.copy()
     final_lower = lowerband.copy()
 
-    # ponytail: O(n) iloc loop, not vectorized — SuperTrend's band is
-    # recursive on its own previous value, which pandas can't express as a
-    # vector op. Fine at backtest/live tick volumes; revisit only if this
-    # profiles as a bottleneck on very large historical ranges.
-    for i in range(1, len(df)):
-        if close.iloc[i - 1] <= final_upper.iloc[i - 1]:
-            final_upper.iloc[i] = min(upperband.iloc[i], final_upper.iloc[i - 1])
+    # ponytail: recursive band still needs a Python loop (pandas can't
+    # vectorize a value depending on its own previous value), but numpy
+    # array access instead of Series.iloc cuts per-step cost ~50-100x.
+    # The walk-forward backtest reruns this on a growing window every bar,
+    # so the old iloc version was O(n^2) with a heavy constant -- that's
+    # what made an 8000+ candle backtest look stuck for the better part
+    # of an hour instead of finishing in seconds.
+    for i in range(1, n):
+        if close_arr[i - 1] <= final_upper[i - 1]:
+            final_upper[i] = min(upperband[i], final_upper[i - 1])
         else:
-            final_upper.iloc[i] = upperband.iloc[i]
+            final_upper[i] = upperband[i]
 
-        if close.iloc[i - 1] >= final_lower.iloc[i - 1]:
-            final_lower.iloc[i] = max(lowerband.iloc[i], final_lower.iloc[i - 1])
+        if close_arr[i - 1] >= final_lower[i - 1]:
+            final_lower[i] = max(lowerband[i], final_lower[i - 1])
         else:
-            final_lower.iloc[i] = lowerband.iloc[i]
+            final_lower[i] = lowerband[i]
 
-    trend = pd.Series(index=df.index, dtype=int)
-    trend.iloc[0] = 1
-    for i in range(1, len(df)):
-        if trend.iloc[i - 1] == 1 and close.iloc[i] < final_lower.iloc[i]:
-            trend.iloc[i] = -1
-        elif trend.iloc[i - 1] == -1 and close.iloc[i] > final_upper.iloc[i]:
-            trend.iloc[i] = 1
+    trend = np.empty(n, dtype=int)
+    trend[0] = 1
+    for i in range(1, n):
+        if trend[i - 1] == 1 and close_arr[i] < final_lower[i]:
+            trend[i] = -1
+        elif trend[i - 1] == -1 and close_arr[i] > final_upper[i]:
+            trend[i] = 1
         else:
-            trend.iloc[i] = trend.iloc[i - 1]
+            trend[i] = trend[i - 1]
 
     line = np.where(trend == 1, final_lower, final_upper)
     return pd.DataFrame({"supertrend": line, "trend": trend}, index=df.index)
