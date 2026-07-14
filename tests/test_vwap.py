@@ -39,3 +39,18 @@ def test_price_above_and_below_vwap():
     vwap = calculate_vwap(df)
     assert price_above_vwap(df, vwap) == (df["close"].iloc[-1] > vwap.iloc[-1])
     assert price_below_vwap(df, vwap) == (df["close"].iloc[-1] < vwap.iloc[-1])
+
+
+def test_vwap_falls_back_to_unweighted_average_when_volume_is_zero():
+    # Index instruments (SENSEX/NIFTY) report zero volume -- the
+    # volume-weighted formula is 0/0 and must not collapse to NaN.
+    idx = pd.date_range("2026-01-05 09:15", periods=3, freq="1min")
+    df = pd.DataFrame(
+        {"high": [105, 106, 107], "low": [95, 96, 97], "close": [100, 102, 104], "volume": [0, 0, 0]},
+        index=idx,
+    )
+    vwap = calculate_vwap(df)
+    assert not vwap.isna().any()
+    typical = (df["high"] + df["low"] + df["close"]) / 3
+    expected_last = typical.expanding().mean().iloc[-1]
+    assert abs(vwap.iloc[-1] - expected_last) < 1e-9

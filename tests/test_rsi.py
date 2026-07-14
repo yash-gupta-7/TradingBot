@@ -15,16 +15,21 @@ def test_rsi_monotonic_fall_approaches_0():
     assert rsi.iloc[-1] < 5
 
 
-def test_rsi_signal_bullish_on_cross_above_midline_and_rising():
+def test_rsi_signal_bullish_above_midline():
     rsi = pd.Series([48, 49, 52])
     assert rsi_signal(rsi, midline=50) == "bullish"
 
 
-def test_rsi_signal_none_when_crossed_but_falling():
-    rsi = pd.Series([48, 55, 52])  # crossed above earlier, now falling
-    assert rsi_signal(rsi, midline=50) is None
+def test_rsi_signal_stays_bullish_after_the_crossing_bar():
+    rsi = pd.Series([48, 55, 52])  # crossed above earlier, still above midline
+    assert rsi_signal(rsi, midline=50) == "bullish"
 
 
-def test_rsi_signal_bearish_on_cross_below_midline_and_falling():
-    rsi = pd.Series([52, 51, 48])  # crossed below midline, falling
+def test_rsi_signal_bearish_below_midline():
+    rsi = pd.Series([52, 51, 48])
     assert rsi_signal(rsi, midline=50) == "bearish"
+
+
+def test_rsi_signal_none_when_nan():
+    rsi = pd.Series([float("nan")])
+    assert rsi_signal(rsi, midline=50) is None

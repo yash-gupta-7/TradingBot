@@ -13,18 +13,16 @@ def calculate_rsi(series: pd.Series, length: int) -> pd.Series:
 
 
 def rsi_signal(rsi_series: pd.Series, midline: float) -> str | None:
-    """Bullish: crossed above midline AND still rising.
-    Bearish: crossed below midline AND still falling.
+    """Bullish: RSI above midline. Bearish: RSI below midline.
+    State-based (checked fresh every bar), not a one-bar crossover event --
+    see ema_cross_signal for why: a one-bar event almost never coincides
+    with the other state-based filters.
     Overbought/oversold zones are intentionally NOT used to generate
     signals here — per spec they're confirmation-only, applied in strategy.py."""
-    if len(rsi_series) < 2:
+    if len(rsi_series) < 1 or pd.isna(rsi_series.iloc[-1]):
         return None
-    crossed_above = rsi_series.iloc[-2] <= midline and rsi_series.iloc[-1] > midline
-    crossed_below = rsi_series.iloc[-2] >= midline and rsi_series.iloc[-1] < midline
-    rising = rsi_series.iloc[-1] > rsi_series.iloc[-2]
-    falling = rsi_series.iloc[-1] < rsi_series.iloc[-2]
-    if crossed_above and rising:
+    if rsi_series.iloc[-1] > midline:
         return "bullish"
-    if crossed_below and falling:
+    if rsi_series.iloc[-1] < midline:
         return "bearish"
     return None

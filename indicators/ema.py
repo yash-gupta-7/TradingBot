@@ -16,14 +16,16 @@ def ema_slope(ema_series: pd.Series, lookback: int) -> float:
 def ema_cross_signal(
     fast: pd.Series, slow: pd.Series, slope_fast: float, slope_threshold: float
 ) -> str | None:
-    """Bullish: fast crosses above slow AND fast slope >= threshold.
-    Bearish: fast crosses below slow AND fast slope <= -threshold."""
-    if len(fast) < 2 or len(slow) < 2:
+    """Bullish: fast EMA above slow EMA AND fast slope >= threshold.
+    Bearish: fast EMA below slow EMA AND fast slope <= -threshold.
+    State-based (checked fresh every bar), not a one-bar crossover event --
+    a one-bar event almost never lands on the same bar as the other
+    state-based filters (SuperTrend/ADX/ATR/volume/VWAP), so combining them
+    with AND effectively never fires."""
+    if len(fast) < 1 or len(slow) < 1:
         return None
-    crossed_up = fast.iloc[-2] <= slow.iloc[-2] and fast.iloc[-1] > slow.iloc[-1]
-    crossed_down = fast.iloc[-2] >= slow.iloc[-2] and fast.iloc[-1] < slow.iloc[-1]
-    if crossed_up and slope_fast >= slope_threshold:
+    if fast.iloc[-1] > slow.iloc[-1] and slope_fast >= slope_threshold:
         return "bullish"
-    if crossed_down and slope_fast <= -slope_threshold:
+    if fast.iloc[-1] < slow.iloc[-1] and slope_fast <= -slope_threshold:
         return "bearish"
     return None

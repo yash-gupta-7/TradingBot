@@ -266,9 +266,9 @@ def test_engine_never_opens_a_second_trade_while_one_is_open():
 
 def test_engine_respects_max_trades_per_day():
     df = _two_signal_day_df(n=390)  # full trading day of 1-min bars
-    # Prove the fixture can produce 2 trades absent a tighter cap.
+    # Prove the fixture can produce more than 1 trade absent a tighter cap.
     uncapped = BacktestEngine(df, CFG).run()
-    assert len(uncapped) == 2
+    assert len(uncapped) > 1
 
     cfg = {**CFG, "risk": {**CFG["risk"], "max_trades_per_day": 1}}
     engine = BacktestEngine(df, cfg)

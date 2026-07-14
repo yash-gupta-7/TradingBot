@@ -28,10 +28,9 @@ def _bullish_df(n=80, freq="1min"):
     the final (most recently closed) bar: a quiet, mildly choppy
     consolidation followed by a single breakout bar that carries a volume
     spike and enough range/momentum to flip EMA, RSI, ADX and ATR all at
-    once. NB: a *steadily* trending ramp does not work here — EMA and RSI
-    crossovers are single-bar trigger events, so they'd fire near the start
-    of a steady ramp and never again, missing the final bar these tests
-    inspect. The breakout has to land on the last bar instead.
+    once. EMA/RSI signals are state-based (fast EMA above slow, RSI above
+    midline) so they'd already be satisfied earlier in a steady ramp too --
+    the breakout bar exists to also clear ADX/ATR/volume on the same bar.
     """
     idx = pd.date_range("2026-01-05 09:15", periods=n, freq=freq)
     base = np.zeros(n)
