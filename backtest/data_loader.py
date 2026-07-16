@@ -17,9 +17,15 @@ def fetch_historical(
     from_date/to_date: "YYYY-MM-DD" strings.
     """
     candles = kite.historical_data(instrument_token, from_date, to_date, interval)
+    if not candles:
+        # Pre-market or holiday — return empty DataFrame with proper DatetimeIndex
+        return pd.DataFrame(
+            columns=["open", "high", "low", "close", "volume"],
+            index=pd.DatetimeIndex([], name="datetime")
+        )
     df = pd.DataFrame(candles)
     df = df.rename(columns={"date": "datetime"}).set_index("datetime")
-    df.index = pd.to_datetime(df.index)
+    df.index = pd.to_datetime(df.index).tz_localize(None)
     return df[["open", "high", "low", "close", "volume"]]
 
 

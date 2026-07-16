@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>SENSEX Bot — Live Dashboard</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet"/>
+  <style>
+    :root {
+      --bg: #07090f;
+      --surface: #0e1117;
+      --surface2: #161b27;
+      --border: rgba(255,255,255,0.07);
+      --text: #e2e8f0;
+      --muted: #64748b;
+      --green: #22c55e;
+      --green-dim: rgba(34,197,94,0.12);
+      --red: #ef4444;
+      --red-dim: rgba(239,68,68,0.12);
+      --blue: #3b82f6;
+      --blue-dim: rgba(59,130,246,0.12);
+      --yellow: #eab308;
+      --yellow-dim: rgba(234,179,8,0.12);
+      --accent: #6366f1;
+      --accent-dim: rgba(99,102,241,0.15);
+      --radius: 12px;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* ── Noise overlay ── */
+    body::before {
+      content: '';
+      position: fixed; inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+      pointer-events: none; z-index: 0;
+    }
+
+    /* ── Header ── */
+    header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 18px 32px;
+      border-bottom: 1px solid var(--border);
+      background: rgba(14,17,23,0.9);
+      backdrop-filter: blur(20px);
+      position: sticky; top: 0; z-index: 100;
+    }
+    .logo {
+      display: flex; align-items: center; gap: 10px;
+    }
+    .logo-icon {
+      width: 34px; height: 34px; border-radius: 8px;
+      background: linear-gradient(135deg, #6366f1, #8b5cf6);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 16px;
+    }
+    .logo-text { font-size: 17px; font-weight: 700; letter-spacing: -0.3px; }
+    .logo-sub { font-size: 11px; color: var(--muted); }
+
+    .status-badge {
+      display: flex; align-items: center; gap: 8px;
+      padding: 7px 16px; border-radius: 99px;
+      font-size: 13px; font-weight: 600;
+      border: 1px solid;
+      transition: all 0.3s;
+    }
+    .status-badge.running {
+      background: var(--green-dim); color: var(--green); border-color: rgba(34,197,94,0.3);
+    }
+    .status-badge.stopped {
+      background: var(--red-dim); color: var(--red); border-color: rgba(239,68,68,0.3);
+    }
+    .status-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: currentColor;
+    }
+    .status-badge.running .status-dot {
+      animation: pulse 1.5s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(0.8); }
+    }
+
+    .header-right { display: flex; align-items: center; gap: 16px; }
+    .last-update { font-size: 12px; color: var(--muted); }
+
+    /* ── Main layout ── */
+    main { padding: 28px 32px; position: relative; z-index: 1; }
+
+    /* ── Stats grid ── */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 16px; margin-bottom: 28px;
+    }
+    .stat-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+      transition: transform 0.2s, border-color 0.2s;
+    }
+    .stat-card:hover { transform: translateY(-2px); border-color: rgba(255,255,255,0.14); }
+    .stat-label { font-size: 12px; color: var(--muted); font-weight: 500; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px; }
+    .stat-value { font-size: 26px; font-weight: 700; letter-spacing: -0.5px; }
+    .stat-sub { font-size: 12px; color: var(--muted); margin-top: 4px; }
+    .positive { color: var(--green); }
+    .negative { color: var(--red); }
+    .neutral { color: var(--blue); }
+
+    /* ── Open trade card ── */
+    .open-trade-card {
+      background: linear-gradient(135deg, rgba(99,102,241,0.12), rgba(139,92,246,0.06));
+      border: 1px solid rgba(99,102,241,0.35);
+      border-radius: var(--radius);
+      padding: 20px 24px;
+      margin-bottom: 28px;
+      display: none;
+    }
+    .open-trade-card.visible { display: block; }
+    .open-trade-header {
+      display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px;
+    }
+    .open-trade-title {
+      font-size: 13px; font-weight: 600; color: var(--accent); text-transform: uppercase; letter-spacing: 0.5px;
+      display: flex; align-items: center; gap: 6px;
+    }
+    .live-dot {
+      width: 7px; height: 7px; border-radius: 50%; background: var(--accent);
+      animation: pulse 1s ease-in-out infinite;
+    }
+    .open-trade-grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 16px;
+    }
+    .open-trade-field label { font-size: 11px; color: var(--muted); display: block; margin-bottom: 4px; }
+    .open-trade-field span { font-size: 15px; font-weight: 600; }
+
+    /* ── Tabs ── */
+    .tabs-wrapper { margin-bottom: 20px; }
+    .tab-list {
+      display: flex; gap: 4px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px; padding: 4px; width: fit-content;
+    }
+    .tab-btn {
+      padding: 9px 20px; border-radius: 7px; border: none;
+      font-size: 13px; font-weight: 500; cursor: pointer;
+      background: transparent; color: var(--muted);
+      transition: all 0.2s;
+    }
+    .tab-btn.active { background: var(--surface2); color: var(--text); font-weight: 600; }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    /* ── Table ── */
+    .table-container {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+    .table-header {
+      padding: 18px 24px;
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .table-title { font-size: 15px; font-weight: 600; }
+    .table-count { font-size: 13px; color: var(--muted); }
+    .scroll-x { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; }
+    thead th {
+      padding: 12px 20px; text-align: left;
+      font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px;
+      background: var(--surface2); border-bottom: 1px solid var(--border);
+      white-space: nowrap;
+    }
+    tbody tr {
+      border-bottom: 1px solid var(--border);
+      transition: background 0.15s;
+    }
+    tbody tr:hover { background: rgba(255,255,255,0.025); }
+    tbody tr:last-child { border-bottom: none; }
+    td {
+      padding: 13px 20px; font-size: 13px; white-space: nowrap;
+    }
+    .direction-badge {
+      padding: 3px 10px; border-radius: 99px; font-size: 11px; font-weight: 700;
+    }
+    .call-badge { background: var(--green-dim); color: var(--green); }
+    .put-badge { background: var(--red-dim); color: var(--red); }
+    .reason-badge {
+      padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 500;
+      background: var(--surface2); color: var(--muted);
+    }
+    .pnl-cell { font-weight: 700; font-size: 14px; }
+    .empty-state {
+      text-align: center; padding: 60px 20px; color: var(--muted);
+    }
+    .empty-state .icon { font-size: 40px; margin-bottom: 12px; }
+    .empty-state p { font-size: 14px; }
+
+    /* ── Monthly summary ── */
+    .monthly-grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 16px; margin-bottom: 24px;
+    }
+    .month-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+    }
+    .month-card-header {
+      display: flex; justify-content: space-between; align-items: flex-start;
+      margin-bottom: 14px;
+    }
+    .month-name { font-size: 16px; font-weight: 700; }
+    .month-pnl { font-size: 20px; font-weight: 800; }
+    .month-stats { display: flex; gap: 16px; }
+    .month-stat { font-size: 12px; color: var(--muted); }
+    .month-stat span { color: var(--text); font-weight: 500; }
+    .month-bar-bg {
+      height: 4px; background: var(--surface2); border-radius: 99px; margin-top: 14px; overflow: hidden;
+    }
+    .month-bar { height: 100%; border-radius: 99px; transition: width 0.5s; }
+
+    /* ── Trade detail expanded ── */
+    .detail-reasons {
+      background: var(--surface2); border-radius: 8px;
+      padding: 10px 14px; margin-top: 8px;
+      font-size: 12px; color: var(--muted); line-height: 1.6;
+    }
+    .detail-reasons span { color: var(--accent); margin-right: 4px; }
+
+    /* ── Scrollbar ── */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: var(--bg); }
+    ::-webkit-scrollbar-thumb { background: #2d3748; border-radius: 99px; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-icon">📈</div>
+    <div>
+      <div class="logo-text">SENSEX Bot</div>
+      <div class="logo-sub">Live Paper Trading Dashboard</div>
+    </div>
+  </div>
+  <div class="header-right">
+    <div class="last-update" id="lastUpdate">–</div>
+    <div class="status-badge stopped" id="statusBadge">
+      <div class="status-dot"></div>
+      <span id="statusText">Stopped</span>
+    </div>
+  </div>
+</header>
+
+<main>
+  <!-- Stats Row -->
+  <div class="stats-grid">
+    <div class="stat-card">
+      <div class="stat-label">Capital</div>
+      <div class="stat-value" id="capital">–</div>
+      <div class="stat-sub" id="capitalChange">–</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Total Trades</div>
+      <div class="stat-value neutral" id="totalTrades">–</div>
+      <div class="stat-sub" id="tradesToday">0 today</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Total P&amp;L</div>
+      <div class="stat-value" id="totalPnl">–</div>
+      <div class="stat-sub" id="winLoss">–</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Win Rate</div>
+      <div class="stat-value" id="winRate">–</div>
+      <div class="stat-sub" id="winRateSub">–</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Consecutive Losses</div>
+      <div class="stat-value" id="consLosses">–</div>
+      <div class="stat-sub" id="haltStatus">–</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Bot Started</div>
+      <div class="stat-value" id="startedAt" style="font-size:15px">–</div>
+      <div class="stat-sub" id="startedSub">–</div>
+    </div>
+  </div>
+
+  <!-- Open Trade Card -->
+  <div class="open-trade-card" id="openTradeCard">
+    <div class="open-trade-header">
+      <div class="open-trade-title">
+        <div class="live-dot"></div>
+        Live Position
+      </div>
+      <div id="openPnl" style="font-size:14px; font-weight:700">–</div>
+    </div>
+    <div class="open-trade-grid">
+      <div class="open-trade-field"><label>Direction</label><span id="openDir">–</span></div>
+      <div class="open-trade-field"><label>Entry Price</label><span id="openEntry">–</span></div>
+      <div class="open-trade-field"><label>Entry Time</label><span id="openTime">–</span></div>
+      <div class="open-trade-field"><label>Stop Loss</label><span id="openSL" class="negative">–</span></div>
+      <div class="open-trade-field"><label>Target</label><span id="openTG" class="positive">–</span></div>
+      <div class="open-trade-field"><label>Quantity</label><span id="openQty">–</span></div>
+    </div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="tabs-wrapper">
+    <div class="tab-list">
+      <button class="tab-btn active" onclick="switchTab('trades', this)">📋 Trades Log</button>
+      <button class="tab-btn" onclick="switchTab('monthly', this)">📆 Monthly Summary</button>
+    </div>
+  </div>
+
+  <!-- Trades Log Tab -->
+  <div class="tab-panel active" id="tab-trades">
+    <div class="table-container">
+      <div class="table-header">
+        <div class="table-title">All Trades</div>
+        <div class="table-count" id="tradesCount">–</div>
+      </div>
+      <div class="scroll-x">
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Direction</th>
+              <th>Date</th>
+              <th>Entry Time</th>
+              <th>Exit Time</th>
+              <th>Entry Price</th>
+              <th>Exit Price</th>
+              <th>Qty</th>
+              <th>Stop Loss</th>
+              <th>Target</th>
+              <th>Exit Reason</th>
+              <th style="text-align:right">P&amp;L (₹)</th>
+            </tr>
+          </thead>
+          <tbody id="tradesBody">
+            <tr><td colspan="12">
+              <div class="empty-state"><div class="icon">⏳</div><p>Waiting for trades...</p></div>
+            </td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Monthly Summary Tab -->
+  <div class="tab-panel" id="tab-monthly">
+    <div class="monthly-grid" id="monthlyGrid"></div>
+    <div class="table-container">
+      <div class="table-header">
+        <div class="table-title">Monthly Breakdown</div>
+        <div class="table-count" id="monthlyTotal">–</div>
+      </div>
+      <div class="scroll-x">
+        <table>
+          <thead>
+            <tr>
+              <th>Month</th>
+              <th>Trades</th>
+              <th>Wins</th>
+              <th>Losses</th>
+              <th>Win Rate</th>
+              <th style="text-align:right">P&amp;L (₹)</th>
+            </tr>
+          </thead>
+          <tbody id="monthlyBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script>
+  const API = 'http://localhost:5050';
+  let allTrades = [];
+
+  function switchTab(id, btn) {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('tab-' + id).classList.add('active');
+    if (id === 'monthly') fetchMonthly();
+  }
+
+  function fmt(n) { return n != null ? '₹' + n.toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2}) : '–'; }
+  function pct(n) { return n != null ? (n*100).toFixed(1) + '%' : '–'; }
+  function colorClass(n) { return n > 0 ? 'positive' : n < 0 ? 'negative' : ''; }
+
+  function reasonLabel(r) {
+    const map = {
+      target_hit: '🎯 Target', stop_hit: '🛑 Stop Loss',
+      supertrend_reversal: '🔄 ST Reversal', ema_reversal: '📉 EMA Reversal',
+      eod_square_off: '🕐 EOD', backtest_end: '🏁 End'
+    };
+    return map[r] || r;
+  }
+
+  async function fetchStatus() {
+    try {
+      const r = await fetch(API + '/api/status');
+      const d = await r.json();
+
+      // Badge
+      const badge = document.getElementById('statusBadge');
+      const statusText = document.getElementById('statusText');
+      if (d.running) {
+        badge.className = 'status-badge running';
+        statusText.textContent = 'Live';
+      } else {
+        badge.className = 'status-badge stopped';
+        statusText.textContent = 'Stopped';
+      }
+
+      // Stats
+      document.getElementById('capital').textContent = fmt(d.capital);
+      document.getElementById('capital').className = 'stat-value ' + colorClass(d.capital - 100000);
+
+      if (d.capital != null) {
+        const diff = d.capital - 100000;
+        const el = document.getElementById('capitalChange');
+        el.textContent = (diff >= 0 ? '+' : '') + fmt(diff) + ' from start';
+        el.className = 'stat-sub ' + colorClass(diff);
+      }
+
+      document.getElementById('tradesToday').textContent = (d.trades_today || 0) + ' today';
+      document.getElementById('consLosses').textContent = d.consecutive_losses ?? '–';
+      document.getElementById('consLosses').className = 'stat-value ' + (d.consecutive_losses > 1 ? 'negative' : 'neutral');
+      document.getElementById('haltStatus').textContent = d.trading_halted ? '⛔ Trading Halted' : 'Active';
+      document.getElementById('haltStatus').style.color = d.trading_halted ? 'var(--red)' : 'var(--green)';
+      document.getElementById('startedAt').textContent = d.started_at ? d.started_at.slice(11,16) : '–';
+      document.getElementById('startedSub').textContent = d.started_at ? d.started_at.slice(0,10) : '–';
+
+      // Open trade
+      const card = document.getElementById('openTradeCard');
+      if (d.open_trade) {
+        card.classList.add('visible');
+        document.getElementById('openDir').textContent = d.open_trade.direction;
+        document.getElementById('openDir').className = d.open_trade.direction === 'BUY_CALL' ? 'positive' : 'negative';
+        document.getElementById('openEntry').textContent = '₹' + d.open_trade.entry_price.toLocaleString('en-IN');
+        document.getElementById('openTime').textContent = d.open_trade.entry_time;
+        document.getElementById('openSL').textContent = '₹' + d.open_trade.stop_price.toLocaleString('en-IN');
+        document.getElementById('openTG').textContent = '₹' + d.open_trade.target_price.toLocaleString('en-IN');
+        document.getElementById('openQty').textContent = d.open_trade.quantity + ' lots';
+      } else {
+        card.classList.remove('visible');
+      }
+
+      document.getElementById('lastUpdate').textContent = 'Updated ' + new Date().toLocaleTimeString('en-IN');
+    } catch(e) {
+      document.getElementById('statusBadge').className = 'status-badge stopped';
+      document.getElementById('statusText').textContent = 'Offline';
+    }
+  }
+
+  async function fetchTrades() {
+    try {
+      const r = await fetch(API + '/api/trades');
+      allTrades = await r.json();
+
+      document.getElementById('totalTrades').textContent = allTrades.length;
+      document.getElementById('tradesCount').textContent = allTrades.length + ' trades';
+
+      const wins = allTrades.filter(t => t.pnl > 0).length;
+      const losses = allTrades.filter(t => t.pnl <= 0).length;
+      const totalPnl = allTrades.reduce((s, t) => s + (t.pnl || 0), 0);
+      const winRate = allTrades.length > 0 ? wins / allTrades.length : null;
+
+      const pnlEl = document.getElementById('totalPnl');
+      pnlEl.textContent = fmt(totalPnl);
+      pnlEl.className = 'stat-value ' + colorClass(totalPnl);
+
+      document.getElementById('winRate').textContent = winRate != null ? (winRate * 100).toFixed(1) + '%' : '–';
+      document.getElementById('winRate').className = 'stat-value ' + (winRate > 0.5 ? 'positive' : winRate > 0.33 ? 'neutral' : 'negative');
+      document.getElementById('winLoss').textContent = wins + ' wins / ' + losses + ' losses';
+      document.getElementById('winRateSub').textContent = 'Breakeven at 40%+';
+
+      renderTradesTable(allTrades);
+    } catch(e) {}
+  }
+
+  function renderTradesTable(trades) {
+    const tbody = document.getElementById('tradesBody');
+    if (trades.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="12"><div class="empty-state"><div class="icon">⏳</div><p>No trades yet. Bot will trade when the market opens.</p></div></td></tr>`;
+      return;
+    }
+    tbody.innerHTML = trades.map((t, i) => {
+      const pnlClass = t.pnl > 0 ? 'positive' : t.pnl < 0 ? 'negative' : '';
+      const dirBadge = t.direction === 'BUY_CALL'
+        ? `<span class="direction-badge call-badge">CALL ↑</span>`
+        : `<span class="direction-badge put-badge">PUT ↓</span>`;
+      const date = t.entry_time ? t.entry_time.slice(0,10) : '–';
+      const entryT = t.entry_time ? t.entry_time.slice(11,16) : '–';
+      const exitT = t.exit_time ? t.exit_time.slice(11,16) : '–';
+      return `<tr>
+        <td style="color:var(--muted)">${trades.length - i}</td>
+        <td>${dirBadge}</td>
+        <td>${date}</td>
+        <td>${entryT}</td>
+        <td>${exitT}</td>
+        <td>₹${(t.entry_price || 0).toLocaleString('en-IN')}</td>
+        <td>₹${(t.exit_price || 0).toLocaleString('en-IN')}</td>
+        <td>${t.quantity}</td>
+        <td class="negative">₹${(t.stop_price || 0).toLocaleString('en-IN')}</td>
+        <td class="positive">₹${(t.target_price || 0).toLocaleString('en-IN')}</td>
+        <td><span class="reason-badge">${reasonLabel(t.exit_reason)}</span></td>
+        <td style="text-align:right" class="pnl-cell ${pnlClass}">${t.pnl != null ? (t.pnl >= 0 ? '+' : '') + fmt(t.pnl) : '–'}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  async function fetchMonthly() {
+    try {
+      const r = await fetch(API + '/api/monthly');
+      const d = await r.json();
+
+      document.getElementById('monthlyTotal').textContent = 'Total: ' + fmt(d.total_pnl);
+
+      const maxAbsPnl = Math.max(...Object.values(d.months).map(m => Math.abs(m.pnl)), 1);
+
+      const grid = document.getElementById('monthlyGrid');
+      grid.innerHTML = Object.entries(d.months).map(([month, m]) => {
+        const wr = m.trades > 0 ? ((m.wins / m.trades) * 100).toFixed(0) + '%' : '–';
+        const barColor = m.pnl >= 0 ? 'var(--green)' : 'var(--red)';
+        const barWidth = (Math.abs(m.pnl) / maxAbsPnl * 100).toFixed(1);
+        return `<div class="month-card">
+          <div class="month-card-header">
+            <div class="month-name">${month}</div>
+            <div class="month-pnl ${colorClass(m.pnl)}">${m.pnl >= 0 ? '+' : ''}${fmt(m.pnl)}</div>
+          </div>
+          <div class="month-stats">
+            <div class="month-stat">Trades <span>${m.trades}</span></div>
+            <div class="month-stat">Win Rate <span>${wr}</span></div>
+            <div class="month-stat">W/L <span>${m.wins}/${m.losses}</span></div>
+          </div>
+          <div class="month-bar-bg">
+            <div class="month-bar" style="width:${barWidth}%; background:${barColor}"></div>
+          </div>
+        </div>`;
+      }).join('');
+
+      const tbody = document.getElementById('monthlyBody');
+      tbody.innerHTML = Object.entries(d.months).map(([month, m]) => {
+        const wr = m.trades > 0 ? ((m.wins / m.trades) * 100).toFixed(1) + '%' : '–';
+        return `<tr>
+          <td style="font-weight:600">${month}</td>
+          <td>${m.trades}</td>
+          <td class="positive">${m.wins}</td>
+          <td class="negative">${m.losses}</td>
+          <td>${wr}</td>
+          <td style="text-align:right" class="pnl-cell ${colorClass(m.pnl)}">${m.pnl >= 0 ? '+' : ''}${fmt(m.pnl)}</td>
+        </tr>`;
+      }).join('') || `<tr><td colspan="6"><div class="empty-state"><div class="icon">📆</div><p>No monthly data yet.</p></div></td></tr>`;
+
+    } catch(e) {}
+  }
+
+  async function refresh() {
+    await Promise.all([fetchStatus(), fetchTrades()]);
+  }
+
+  // Initial load + poll every 5 seconds
+  refresh();
+  setInterval(refresh, 5000);
+</script>
+</body>
+</html>
