@@ -28,6 +28,8 @@ class Trade:
     stop_price: float
     target_price: float
     entry_reasons: list[str] = field(default_factory=list)
+    option_symbol: str | None = None
+    option_entry_price: float | None = None
     exit_time: pd.Timestamp | None = None
     exit_price: float | None = None
     exit_reason: str | None = None
@@ -46,6 +48,7 @@ class BacktestEngine:
         df_1m: pd.DataFrame,
         cfg: dict,
         live_from: pd.Timestamp | None = None,
+        kite = None
     ):
         self.df_1m = df_1m
         self.df_5m = resample_to_5min(df_1m)
@@ -61,6 +64,42 @@ class BacktestEngine:
         self.day_start_capital = self.capital
         self.consecutive_losses = 0
         self.trading_halted_today = False
+        self.kite = kite
+        self.bfo_instruments = kite.instruments("BFO") if kite else []
+
+    def _get_atm_option(self, entry_price: float, direction: str, entry_time: pd.Timestamp):
+        if not self.kite or not self.bfo_instruments:
+            return None, None
+            
+        try:
+            strike = round(entry_price / 100) * 100
+            opt_type = "CE" if direction == "BUY_CALL" else "PE"
+            
+            # Find options that match and haven't expired before the entry_time
+            options = []
+            for i in self.bfo_instruments:
+                if i["name"] == "SENSEX" and i["strike"] == strike and i["instrument_type"] == opt_type:
+                    exp_date = pd.Timestamp(i["expiry"]).normalize()
+                    if exp_date >= entry_time.normalize():
+                        options.append((exp_date, i["tradingsymbol"], i["instrument_token"]))
+            
+            if not options:
+                return None, None
+                
+            # Find the nearest expiry
+            options.sort(key=lambda x: x[0])
+            _, nearest_symbol, inst_token = options[0]
+            
+            # Fetch historical candle for that exact minute
+            from_str = entry_time.strftime("%Y-%m-%d %H:%M:%S")
+            to_str = (entry_time + pd.Timedelta(minutes=1)).strftime("%Y-%m-%d %H:%M:%S")
+            hist = self.kite.historical_data(inst_token, from_str, to_str, "minute")
+            
+            if hist and len(hist) > 0:
+                return nearest_symbol, hist[0]["close"]
+            return nearest_symbol, None
+        except Exception:
+            return None, None
 
     def run(self) -> list[Trade]:
         warmup = self.cfg["backtest"]["warmup_bars"]
@@ -130,15 +169,20 @@ class BacktestEngine:
         if qty <= 0:
             return
         target_price = calculate_target(signal.direction, entry_price, stop_price, self.cfg["risk"]["reward_risk_ratio"])
+        
+        entry_time = window_1m.index[-1]
+        option_symbol, option_entry_price = self._get_atm_option(entry_price, signal.direction, entry_time)
 
         self.open_trade = Trade(
-            entry_time=window_1m.index[-1],
+            entry_time=entry_time,
             direction=signal.direction,
             entry_price=entry_price,
             quantity=qty,
             stop_price=stop_price,
             target_price=target_price,
             entry_reasons=signal.reasons,
+            option_symbol=option_symbol,
+            option_entry_price=option_entry_price,
         )
         self.tracker = TrailingStopTracker(
             signal.direction, entry_price, stop_price, self.cfg["risk"]["breakeven_r"], self.cfg["risk"]["trail_start_r"]

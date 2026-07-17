@@ -16,9 +16,10 @@ logger = logging.getLogger(__name__)
 
 
 class PaperEngine:
-    def __init__(self, instrument_token: int, df_1m: pd.DataFrame, cfg: dict):
+    def __init__(self, instrument_token: int, df_1m: pd.DataFrame, cfg: dict, kite=None):
         self.instrument_token = instrument_token
         self.cfg = cfg
+        self.kite = kite
         
         self.df_1m = df_1m.copy()
         if hasattr(self.df_1m.index, 'tz') and self.df_1m.index.tz is not None:
@@ -156,6 +157,37 @@ class PaperEngine:
         if signal.direction:
             self._enter_trade(signal)
 
+    def _get_atm_option(self, entry_price: float, direction: str):
+        if not hasattr(self, "kite") or self.kite is None:
+            return None, None
+            
+        try:
+            strike = round(entry_price / 100) * 100
+            opt_type = "CE" if direction == "BUY_CALL" else "PE"
+            
+            bfo = self.kite.instruments("BFO")
+            today = pd.Timestamp.now().normalize()
+            
+            options = []
+            for i in bfo:
+                if i["name"] == "SENSEX" and i["strike"] == strike and i["instrument_type"] == opt_type:
+                    exp_date = pd.Timestamp(i["expiry"]).normalize()
+                    if exp_date >= today:
+                        options.append((exp_date, i["tradingsymbol"]))
+            
+            if not options:
+                return None, None
+                
+            options.sort(key=lambda x: x[0])
+            nearest_symbol = options[0][1]
+            
+            quote = self.kite.quote([f"BFO:{nearest_symbol}"])
+            last_price = quote.get(f"BFO:{nearest_symbol}", {}).get("last_price")
+            return nearest_symbol, last_price
+        except Exception as e:
+            logger.error(f"Failed to fetch option chain: {e}")
+            return None, None
+
     def _enter_trade(self, signal) -> None:
         entry_price = self.df_1m["close"].iloc[-1]
         prev_candle = self.df_1m.iloc[-2]
@@ -171,6 +203,8 @@ class PaperEngine:
             return
         target_price = calculate_target(signal.direction, entry_price, stop_price, self.cfg["risk"]["reward_risk_ratio"])
 
+        option_symbol, option_entry_price = self._get_atm_option(entry_price, signal.direction)
+
         self.open_trade = Trade(
             entry_time=self.df_1m.index[-1],
             direction=signal.direction,
@@ -179,6 +213,8 @@ class PaperEngine:
             stop_price=stop_price,
             target_price=target_price,
             entry_reasons=signal.reasons,
+            option_symbol=option_symbol,
+            option_entry_price=option_entry_price,
         )
         self.tracker = TrailingStopTracker(
             signal.direction, entry_price, stop_price, self.cfg["risk"]["breakeven_r"], self.cfg["risk"]["trail_start_r"]
@@ -259,6 +295,8 @@ class PaperEngine:
                     "stop_price": t.stop_price,
                     "target_price": t.target_price,
                     "entry_reasons": t.entry_reasons,
+                    "option_symbol": t.option_symbol,
+                    "option_entry_price": t.option_entry_price,
                     "exit_time": t.exit_time.isoformat() if t.exit_time else None,
                     "exit_price": t.exit_price,
                     "exit_reason": t.exit_reason,
@@ -277,6 +315,8 @@ class PaperEngine:
                 "stop_price": t.stop_price,
                 "target_price": t.target_price,
                 "entry_reasons": t.entry_reasons,
+                "option_symbol": t.option_symbol,
+                "option_entry_price": t.option_entry_price,
             }
             state["tracker"] = {
                 "current_stop": self.tracker.current_stop,
@@ -305,6 +345,8 @@ class PaperEngine:
                     stop_price=d["stop_price"],
                     target_price=d["target_price"],
                     entry_reasons=d.get("entry_reasons", []),
+                    option_symbol=d.get("option_symbol"),
+                    option_entry_price=d.get("option_entry_price"),
                     exit_time=pd.Timestamp(d["exit_time"]) if d.get("exit_time") else None,
                     exit_price=d.get("exit_price"),
                     exit_reason=d.get("exit_reason"),

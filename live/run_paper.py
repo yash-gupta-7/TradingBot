@@ -62,7 +62,7 @@ def main() -> None:
             index=pd.DatetimeIndex([], name="datetime")
         )
 
-    engine = PaperEngine(instrument_token=token, df_1m=df_1m, cfg=cfg)
+    engine = PaperEngine(instrument_token=token, df_1m=df_1m, cfg=cfg, kite=kite)
 
     # Start dashboard API
     started_at = datetime.now()

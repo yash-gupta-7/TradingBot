@@ -42,6 +42,8 @@ def _trade_to_dict(t):
         "exit_reason": t.exit_reason,
         "pnl": round(float(pnl), 2) if pnl is not None else None,
         "entry_reasons": t.entry_reasons,
+        "option_symbol": getattr(t, "option_symbol", None),
+        "option_entry_price": round(float(t.option_entry_price), 2) if getattr(t, "option_entry_price", None) else None,
     }
 
 
@@ -165,7 +167,7 @@ def run_backtest():
         live_bars = int(len(df_1m[df_1m.index >= live_from]))
         warmup_bars_count = int(len(df_1m)) - live_bars
 
-        engine = BacktestEngine(df_1m, cfg, live_from=live_from)
+        engine = BacktestEngine(df_1m, cfg, live_from=live_from, kite=kite)
         bt_trades = engine.run()
         metrics = compute_metrics(bt_trades)
 

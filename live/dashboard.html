@@ -413,6 +413,7 @@
             <tr>
               <th>#</th>
               <th>Direction</th>
+              <th>Option Contract</th>
               <th>Date</th>
               <th>Entry Time</th>
               <th>Exit Time</th>
@@ -426,7 +427,7 @@
             </tr>
           </thead>
           <tbody id="tradesBody">
-            <tr><td colspan="12">
+            <tr><td colspan="13">
               <div class="empty-state"><div class="icon">⏳</div><p>Waiting for trades...</p></div>
             </td></tr>
           </tbody>
@@ -506,6 +507,7 @@
                 <th style="width:32px"></th>
                 <th>#</th>
                 <th>Direction</th>
+                <th>Option Contract</th>
                 <th>Date</th>
                 <th>Entry Time</th>
                 <th>Exit Time</th>
@@ -536,7 +538,7 @@
 </main>
 
 <script>
-  const API = 'http://localhost:5050';
+  const API = window.location.origin;  // works from localhost AND from Azure IP
   let allTrades = [];
 
   // Pre-fill backtest dates to today
@@ -655,7 +657,7 @@
   function renderTradesTable(trades) {
     const tbody = document.getElementById('tradesBody');
     if (trades.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="12"><div class="empty-state"><div class="icon">⏳</div><p>No trades yet. Bot will trade when the market opens.</p></div></td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="13"><div class="empty-state"><div class="icon">⏳</div><p>No trades yet. Bot will trade when the market opens.</p></div></td></tr>`;
       return;
     }
     tbody.innerHTML = trades.map((t, i) => {
@@ -666,9 +668,15 @@
       const date = t.entry_time ? t.entry_time.slice(0,10) : '–';
       const entryT = t.entry_time ? t.entry_time.slice(11,16) : '–';
       const exitT = t.exit_time ? t.exit_time.slice(11,16) : '–';
+      const optHtml = t.option_symbol 
+          ? `<div style="font-family:var(--font-mono); font-size:12px; color:var(--fg)">${t.option_symbol}</div>
+             <div style="font-size:11px; color:var(--muted)">@ ₹${t.option_entry_price}</div>`
+          : '<span style="color:var(--muted)">–</span>';
+
       return `<tr>
         <td style="color:var(--muted)">${trades.length - i}</td>
         <td>${dirBadge}</td>
+        <td>${optHtml}</td>
         <td>${date}</td>
         <td>${entryT}</td>
         <td>${exitT}</td>
@@ -844,7 +852,7 @@
     document.getElementById('bt-trades-count').textContent = trades.length + ' trades';
     const tbody = document.getElementById('bt-trades-body');
     if (trades.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="13"><div class="empty-state"><div class="icon">📭</div><p>No trades in this date range.</p></div></td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="14"><div class="empty-state"><div class="icon">📭</div><p>No trades in this date range.</p></div></td></tr>`;
     } else {
       tbody.innerHTML = trades.map((t, i) => {
         const pnlClass = (t.pnl||0) > 0 ? 'positive' : (t.pnl||0) < 0 ? 'negative' : '';
@@ -857,11 +865,18 @@
         const rowId  = 'bt-row-' + i;
         const reasons = (t.entry_reasons || []).map(r =>
           `<span class="reason-pill">${r}</span>`).join('');
+          
+        const optHtml = t.option_symbol 
+          ? `<div style="font-family:var(--font-mono); font-size:12px; color:var(--fg)">${t.option_symbol}</div>
+             <div style="font-size:11px; color:var(--muted)">${t.option_entry_price ? '@ ₹' + t.option_entry_price : 'N/A'}</div>`
+          : '<span style="color:var(--muted)">–</span>';
+
         return `
           <tr onclick="toggleReasons('${rowId}')" style="cursor:pointer">
             <td><button class="expand-btn" id="${rowId}-icon">▶</button></td>
             <td style="color:var(--muted)">${trades.length - i}</td>
             <td>${dirBadge}</td>
+            <td>${optHtml}</td>
             <td>${date}</td>
             <td>${entryT}</td>
             <td>${exitT}</td>
@@ -874,7 +889,7 @@
             <td style="text-align:right" class="pnl-cell ${pnlClass}">${t.pnl!=null?((t.pnl>=0?'+':'')+fmt(t.pnl)):'–'}</td>
           </tr>
           <tr class="reasons-row" id="${rowId}">
-            <td colspan="13">
+            <td colspan="14">
               <div style="font-size:11px;color:var(--muted);margin-bottom:4px">Entry signals:</div>
               <div class="reason-pills">${reasons || '<span style="color:var(--muted)">No signals recorded</span>'}</div>
             </td>
