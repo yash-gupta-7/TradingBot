@@ -135,7 +135,10 @@ def main() -> None:
         logging.info(f"Reconnecting in {wait} seconds...")
         time.sleep(wait)
     
-    os._exit(0)
+    # Keep the main thread alive so the dashboard remains accessible
+    logging.info("Trading is finished. Keeping dashboard alive... (Press Ctrl+C to close)")
+    while True:
+        time.sleep(1)
 
 
 if __name__ == "__main__":

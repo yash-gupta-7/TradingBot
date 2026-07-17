@@ -3255,3 +3255,56 @@
 2026-07-17 15:19:00,066 - live.paper_engine - INFO - Closed 1m candle at 15:18 - Close: 78136.76
 2026-07-17 15:19:06,527 - werkzeug - INFO - 127.0.0.1 - - [17/Jul/2026 15:19:06] "GET /api/status HTTP/1.1" 200 -
 2026-07-17 15:19:06,529 - werkzeug - INFO - 127.0.0.1 - - [17/Jul/2026 15:19:06] "GET /api/trades HTTP/1.1" 200 -
+2026-07-17 15:21:13,313 - root - INFO - Fetching seed data for 2026-07-17...
+2026-07-17 15:21:13,450 - root - INFO - Fetched 366 historical 1-minute candles.
+2026-07-17 15:21:13,468 - root - INFO - Dashboard running at http://localhost:5050
+2026-07-17 15:21:13,469 - root - INFO - Past square-off time (15:20). Bot is done for the day. ✅
+2026-07-17 15:24:52,503 - root - INFO - Fetching seed data for 2026-07-17...
+2026-07-17 15:24:52,605 - root - INFO - Fetched 370 historical 1-minute candles.
+2026-07-17 15:24:52,622 - root - INFO - Dashboard running at http://localhost:5050
+2026-07-17 15:24:52,623 - root - INFO - Past square-off time (15:20). Bot is done for the day. ✅
+2026-07-17 15:24:52,623 - root - INFO - Trading is finished. Keeping dashboard alive... (Press Ctrl+C to close)
+2026-07-17 15:24:52,654 - werkzeug - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5050
+ * Running on http://10.240.12.179:5050
+2026-07-17 15:24:52,655 - werkzeug - INFO - [33mPress CTRL+C to quit[0m
+2026-07-17 15:24:55,701 - werkzeug - INFO - 127.0.0.1 - - [17/Jul/2026 15:24:55] "[36mGET / HTTP/1.1[0m" 304 -
+2026-07-17 15:24:56,201 - werkzeug - INFO - 127.0.0.1 - - [17/Jul/2026 15:24:56] "GET /api/trades HTTP/1.1" 200 -
+2026-07-17 15:24:56,203 - werkzeug - INFO - 127.0.0.1 - - [17/Jul/2026 15:24:56] "GET /api/status HTTP/1.1" 200 -
+2026-07-17 15:25:00,891 - werkzeug - INFO - 127.0.0.1 - - [17/Jul/2026 15:25:00] "GET /api/status HTTP/1.1" 200 -
+2026-07-17 15:25:01,211 - werkzeug - INFO - 127.0.0.1 - - [17/Jul/2026 15:25:01] "GET /api/trades HTTP/1.1" 200 -
+2026-07-17 15:25:03,562 - werkzeug - INFO - 127.0.0.1 - - [17/Jul/2026 15:25:03] "OPTIONS /api/backtest HTTP/1.1" 200 -
+2026-07-17 15:25:05,911 - werkzeug - INFO - 127.0.0.1 - - [17/Jul/2026 15:25:05] "GET /api/status HTTP/1.1" 200 -
+2026-07-17 15:25:06,214 - werkzeug - INFO - 127.0.0.1 - - [17/Jul/2026 15:25:06] "GET /api/trades HTTP/1.1" 200 -
+2026-07-17 15:25:11,215 - werkzeug - INFO - 127.0.0.1 - - [17/Jul/2026 15:25:11] "GET /api/status HTTP/1.1" 200 -
+2026-07-17 15:25:11,219 - werkzeug - INFO - 127.0.0.1 - - [17/Jul/2026 15:25:11] "GET /api/trades HTTP/1.1" 200 -
+2026-07-17 15:25:15,699 - werkzeug - INFO - 127.0.0.1 - - [17/Jul/2026 15:25:15] "POST /api/backtest HTTP/1.1" 200 -
+2026-07-17 15:25:16,203 - werkzeug - INFO - 127.0.0.1 - - [17/Jul/2026 15:25:16] "GET /api/status HTTP/1.1" 200 -
+2026-07-17 15:25:16,206 - werkzeug - INFO - 127.0.0.1 - - [17/Jul/2026 15:25:16] "GET /api/trades HTTP/1.1" 200 -
+2026-07-17 15:25:20,896 - werkzeug - INFO - 127.0.0.1 - - [17/Jul/2026 15:25:20] "GET /api/status HTTP/1.1" 200 -
+2026-07-17 15:25:21,208 - werkzeug - INFO - 127.0.0.1 - - [17/Jul/2026 15:25:21] "GET /api/trades HTTP/1.1" 200 -
+2026-07-17 15:25:26,550 - werkzeug - INFO - 127.0.0.1 - - [17/Jul/2026 15:25:26] "GET /api/trades HTTP/1.1" 200 -
+2026-07-17 15:25:26,627 - werkzeug - INFO - 127.0.0.1 - - [17/Jul/2026 15:25:26] "GET /api/status HTTP/1.1" 200 -
+2026-07-17 15:25:31,191 - werkzeug - INFO - 127.0.0.1 - - [17/Jul/2026 15:25:31] "GET /api/status HTTP/1.1" 200 -
+2026-07-17 15:25:31,498 - werkzeug - INFO - 127.0.0.1 - - [17/Jul/2026 15:25:31] "GET /api/trades HTTP/1.1" 200 -
+2026-07-17 15:25:36,507 - werkzeug - INFO - 127.0.0.1 - - [17/Jul/2026 15:25:36] "GET /api/status HTTP/1.1" 200 -
+2026-07-17 15:25:36,510 - werkzeug - INFO - 127.0.0.1 - - [17/Jul/2026 15:25:36] "GET /api/trades HTTP/1.1" 200 -
+2026-07-17 15:25:41,202 - werkzeug - INFO - 127.0.0.1 - - [17/Jul/2026 15:25:41] "GET /api/status HTTP/1.1" 200 -
+2026-07-17 15:25:41,505 - werkzeug - INFO - 127.0.0.1 - - [17/Jul/2026 15:25:41] "GET /api/trades HTTP/1.1" 200 -
+2026-07-17 15:25:46,509 - werkzeug - INFO - 127.0.0.1 - - [17/Jul/2026 15:25:46] "GET /api/status HTTP/1.1" 200 -
+2026-07-17 15:25:46,511 - werkzeug - INFO - 127.0.0.1 - - [17/Jul/2026 15:25:46] "GET /api/trades HTTP/1.1" 200 -
+2026-07-17 15:25:51,197 - werkzeug - INFO - 127.0.0.1 - - [17/Jul/2026 15:25:51] "GET /api/status HTTP/1.1" 200 -
+2026-07-17 15:25:51,503 - werkzeug - INFO - 127.0.0.1 - - [17/Jul/2026 15:25:51] "GET /api/trades HTTP/1.1" 200 -
+2026-07-17 15:25:56,199 - werkzeug - INFO - 127.0.0.1 - - [17/Jul/2026 15:25:56] "GET /api/status HTTP/1.1" 200 -
+2026-07-17 15:25:56,201 - werkzeug - INFO - 127.0.0.1 - - [17/Jul/2026 15:25:56] "GET /api/trades HTTP/1.1" 200 -
+2026-07-17 15:26:01,196 - werkzeug - INFO - 127.0.0.1 - - [17/Jul/2026 15:26:01] "GET /api/status HTTP/1.1" 200 -
+2026-07-17 15:26:01,505 - werkzeug - INFO - 127.0.0.1 - - [17/Jul/2026 15:26:01] "GET /api/trades HTTP/1.1" 200 -
+2026-07-17 15:26:06,051 - werkzeug - INFO - 127.0.0.1 - - [17/Jul/2026 15:26:06] "OPTIONS /api/backtest HTTP/1.1" 200 -
+2026-07-17 15:26:06,194 - werkzeug - INFO - 127.0.0.1 - - [17/Jul/2026 15:26:06] "GET /api/status HTTP/1.1" 200 -
+2026-07-17 15:26:06,198 - werkzeug - INFO - 127.0.0.1 - - [17/Jul/2026 15:26:06] "GET /api/trades HTTP/1.1" 200 -
+2026-07-17 15:26:10,893 - werkzeug - INFO - 127.0.0.1 - - [17/Jul/2026 15:26:10] "GET /api/status HTTP/1.1" 200 -
+2026-07-17 15:26:11,214 - werkzeug - INFO - 127.0.0.1 - - [17/Jul/2026 15:26:11] "GET /api/trades HTTP/1.1" 200 -
+2026-07-17 15:26:12,216 - werkzeug - INFO - 127.0.0.1 - - [17/Jul/2026 15:26:12] "POST /api/backtest HTTP/1.1" 200 -
+2026-07-17 15:26:16,203 - werkzeug - INFO - 127.0.0.1 - - [17/Jul/2026 15:26:16] "GET /api/status HTTP/1.1" 200 -
+2026-07-17 15:26:16,205 - werkzeug - INFO - 127.0.0.1 - - [17/Jul/2026 15:26:16] "GET /api/trades HTTP/1.1" 200 -

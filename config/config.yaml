@@ -38,7 +38,7 @@ risk:
   atr_stop_multiplier: 1.2
   breakeven_r: 0.8
   trail_start_r: 1.0
-  max_trades_per_day: 10
+  max_trades_per_day: 5
   max_consecutive_losses: 3
   # max_daily_loss_pct: 2.0
   max_daily_loss_pct: 35.0
