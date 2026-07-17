@@ -16,8 +16,10 @@ indicators:
     multiplier: 3
   ema_fast_length: 9
   ema_slow_length: 15
-  ema_slope_lookback: 3
-  ema_slope_threshold: 0.05
+  ema_slope_lookback: 5       # bars over which slope is measured (5 bars = 5 min on 1m chart)
+  ema_slope_threshold: 3.0   # min points/bar for both EMAs to be considered "steeply angled"
+                              # ~5 pts/bar on SENSEX 1-min ≈ 25° visual angle on a standard chart
+                              # raise to filter more aggressively, lower to catch weaker trends
   rsi_length: 14
   rsi_midline: 50
   rsi_overbought: 80
@@ -30,21 +32,23 @@ indicators:
   volume_multiplier: 1.5
 
 risk:
-  risk_pct: 1.0
+  # risk_pct: 1.0
+  risk_pct: 10.0
   reward_risk_ratio: 1.5
   atr_stop_multiplier: 1.2
   breakeven_r: 0.8
   trail_start_r: 1.0
-  max_trades_per_day: 5
+  max_trades_per_day: 10
   max_consecutive_losses: 3
-  max_daily_loss_pct: 2.0
+  # max_daily_loss_pct: 2.0
+  max_daily_loss_pct: 35.0
 
 trading_hours:
   windows:
-    - ["09:25", "11:30"]
-    - ["13:30", "15:00"]
+    - ["09:25", "12:00"]
+    - ["13:00", "15:05"]
   square_off_time: "15:20"
 
 backtest:
-  initial_capital: 100000
+  initial_capital: 10000
   warmup_bars: 60

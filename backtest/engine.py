@@ -41,10 +41,16 @@ class Trade:
 
 
 class BacktestEngine:
-    def __init__(self, df_1m: pd.DataFrame, cfg: dict):
+    def __init__(
+        self,
+        df_1m: pd.DataFrame,
+        cfg: dict,
+        live_from: pd.Timestamp | None = None,
+    ):
         self.df_1m = df_1m
         self.df_5m = resample_to_5min(df_1m)
         self.cfg = cfg
+        self.live_from = live_from  # Bars before this timestamp are warmup-only
         self.capital = cfg["backtest"]["initial_capital"]
         self.trades: list[Trade] = []
         self.open_trade: Trade | None = None
@@ -61,6 +67,13 @@ class BacktestEngine:
         for i in range(warmup, len(self.df_1m)):
             window_1m = self.df_1m.iloc[: i + 1]
             now = window_1m.index[-1]
+
+            # Bars before live_from belong to the prior-day pre-seed window.
+            # Keep iterating so indicators build their history, but do not
+            # attempt to open or manage any positions.
+            if self.live_from is not None and now < self.live_from:
+                continue
+
             self._roll_day(now)
 
             if self.open_trade is not None:
@@ -78,8 +91,6 @@ class BacktestEngine:
             # equals `now`'s 5-minute floor, which was aggregated from the
             # full upfront resample and so leaks future 1-minute bars.
             window_5m = self.df_5m[self.df_5m.index + pd.Timedelta(minutes=5) <= now]
-            if len(window_5m) < warmup:
-                continue
 
             signal = generate_signal(window_1m, window_5m, self.cfg)
             if signal.direction:
@@ -149,7 +160,10 @@ class BacktestEngine:
         ema_fast = calculate_ema(window_1m["close"], ind["ema_fast_length"])
         ema_slow = calculate_ema(window_1m["close"], ind["ema_slow_length"])
         slope_fast = ema_slope(ema_fast, ind["ema_slope_lookback"])
-        ema_signal = ema_cross_signal(ema_fast, ema_slow, slope_fast, ind["ema_slope_threshold"])
+        slope_slow = ema_slope(ema_slow, ind["ema_slope_lookback"])
+        ema_signal = ema_cross_signal(
+            ema_fast, ema_slow, slope_fast, slope_slow, ind["ema_slope_threshold"]
+        )
         ema_reversed = (direction == "BUY_CALL" and ema_signal == "bearish") or (
             direction == "SELL_PUT" and ema_signal == "bullish"
         )

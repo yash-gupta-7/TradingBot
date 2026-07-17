@@ -27,7 +27,7 @@ def compute_metrics(trades: list[Trade]) -> dict:
     win_rate = len(wins) / len(pnls)
     gross_profit = sum(wins)
     gross_loss = abs(sum(losses))
-    profit_factor = gross_profit / gross_loss if gross_loss > 0 else float("inf") if gross_profit > 0 else 0
+    profit_factor = gross_profit / gross_loss if gross_loss > 0 else 99.99 if gross_profit > 0 else 0.0
 
     equity_curve = list(np.cumsum(pnls))
     # Seed with a 0 baseline so a losing streak from account inception counts

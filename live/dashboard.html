@@ -240,10 +240,82 @@
     }
     .detail-reasons span { color: var(--accent); margin-right: 4px; }
 
-    /* ── Scrollbar ── */
-    ::-webkit-scrollbar { width: 6px; height: 6px; }
-    ::-webkit-scrollbar-track { background: var(--bg); }
-    ::-webkit-scrollbar-thumb { background: #2d3748; border-radius: 99px; }
+    /* ── Backtest tab specific ── */
+    .bt-controls {
+      display: flex; align-items: flex-end; gap: 14px;
+      flex-wrap: wrap; margin-bottom: 24px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px 24px;
+    }
+    .bt-field { display: flex; flex-direction: column; gap: 6px; }
+    .bt-field label { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+    .bt-field input[type=date] {
+      background: var(--surface2); border: 1px solid var(--border);
+      color: var(--text); border-radius: 8px; padding: 9px 14px;
+      font-size: 13px; font-family: inherit; cursor: pointer;
+      outline: none; transition: border-color 0.2s;
+    }
+    .bt-field input[type=date]:focus { border-color: var(--accent); }
+    .bt-field input[type=date]::-webkit-calendar-picker-indicator { filter: invert(1) opacity(0.5); cursor: pointer; }
+    .bt-run-btn {
+      padding: 10px 26px; border-radius: 8px; border: none;
+      background: linear-gradient(135deg, #6366f1, #8b5cf6);
+      color: #fff; font-size: 13px; font-weight: 700;
+      cursor: pointer; transition: opacity 0.2s, transform 0.15s;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .bt-run-btn:hover:not(:disabled) { opacity: 0.9; transform: translateY(-1px); }
+    .bt-run-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+    .bt-spinner {
+      width: 14px; height: 14px; border: 2px solid rgba(255,255,255,0.3);
+      border-top-color: #fff; border-radius: 50%;
+      animation: spin 0.7s linear infinite; display: none;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .bt-info-bar {
+      font-size: 12px; color: var(--muted); margin-left: auto;
+      align-self: center; white-space: nowrap;
+    }
+    .bt-error {
+      background: var(--red-dim); border: 1px solid rgba(239,68,68,0.3);
+      border-radius: var(--radius); padding: 14px 18px;
+      font-size: 13px; color: var(--red); margin-bottom: 20px; display: none;
+    }
+    .bt-metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 14px; margin-bottom: 24px;
+    }
+    .bt-metric-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 16px 18px;
+    }
+    .bt-metric-label { font-size: 11px; color: var(--muted); font-weight: 500; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
+    .bt-metric-value { font-size: 22px; font-weight: 700; letter-spacing: -0.3px; }
+    /* Expandable row */
+    .expand-btn {
+      background: none; border: none; cursor: pointer;
+      color: var(--muted); font-size: 12px; padding: 2px 6px;
+      border-radius: 4px; transition: color 0.15s, background 0.15s;
+    }
+    .expand-btn:hover { color: var(--text); background: var(--surface2); }
+    .reasons-row td {
+      background: var(--surface2);
+      padding: 0 20px 14px 48px !important;
+    }
+    .reasons-row { display: none; }
+    .reasons-row.open { display: table-row; }
+    .reason-pills { display: flex; flex-wrap: wrap; gap: 6px; padding-top: 6px; }
+    .reason-pill {
+      background: var(--accent-dim); color: var(--accent);
+      border-radius: 99px; padding: 3px 10px; font-size: 11px; font-weight: 500;
+    }
+    .bt-monthly-grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 14px; margin-bottom: 24px;
+    }
   </style>
 </head>
 <body>
@@ -322,8 +394,9 @@
   <!-- Tabs -->
   <div class="tabs-wrapper">
     <div class="tab-list">
-      <button class="tab-btn active" onclick="switchTab('trades', this)">📋 Trades Log</button>
-      <button class="tab-btn" onclick="switchTab('monthly', this)">📆 Monthly Summary</button>
+      <button class="tab-btn active" id="tab-btn-trades" onclick="switchTab('trades', this)">📋 Trades Log</button>
+      <button class="tab-btn" id="tab-btn-monthly" onclick="switchTab('monthly', this)">📆 Monthly Summary</button>
+      <button class="tab-btn" id="tab-btn-backtest" onclick="switchTab('backtest', this)">🔬 Backtest</button>
     </div>
   </div>
 
@@ -387,11 +460,92 @@
       </div>
     </div>
   </div>
+  <!-- Backtest Tab -->
+  <div class="tab-panel" id="tab-backtest">
+
+    <!-- Controls -->
+    <div class="bt-controls">
+      <div class="bt-field">
+        <label for="bt-from">From Date</label>
+        <input type="date" id="bt-from" />
+      </div>
+      <div class="bt-field">
+        <label for="bt-to">To Date</label>
+        <input type="date" id="bt-to" />
+      </div>
+      <button class="bt-run-btn" id="bt-run-btn" onclick="runBacktest()">
+        <div class="bt-spinner" id="bt-spinner"></div>
+        <span id="bt-btn-label">▶ Run Backtest</span>
+      </button>
+      <div class="bt-info-bar" id="bt-info-bar">Select a date range and click Run</div>
+      <div style="width:100%;margin-top:6px;font-size:11px;color:var(--muted);padding-top:8px;border-top:1px solid var(--border)">
+        ⚡ Requires the server: <code style="background:var(--surface2);padding:2px 7px;border-radius:4px;color:var(--text)">python -m live.run_backtest_server</code>
+      </div>
+    </div>
+
+    <!-- Error banner -->
+    <div class="bt-error" id="bt-error"></div>
+
+    <!-- Summary metrics (hidden until results arrive) -->
+    <div id="bt-results" style="display:none">
+      <div class="bt-metrics-grid" id="bt-metrics-grid"></div>
+
+      <!-- Monthly breakdown cards -->
+      <div class="bt-monthly-grid" id="bt-monthly-grid"></div>
+
+      <!-- Detailed trade table -->
+      <div class="table-container">
+        <div class="table-header">
+          <div class="table-title">Backtest Trades</div>
+          <div class="table-count" id="bt-trades-count">0 trades</div>
+        </div>
+        <div class="scroll-x">
+          <table id="bt-table">
+            <thead>
+              <tr>
+                <th style="width:32px"></th>
+                <th>#</th>
+                <th>Direction</th>
+                <th>Date</th>
+                <th>Entry Time</th>
+                <th>Exit Time</th>
+                <th>Entry ₹</th>
+                <th>Exit ₹</th>
+                <th>Qty</th>
+                <th>Stop Loss</th>
+                <th>Target</th>
+                <th>Exit Reason</th>
+                <th style="text-align:right">P&amp;L (₹)</th>
+              </tr>
+            </thead>
+            <tbody id="bt-trades-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Empty state (shown before first run) -->
+    <div id="bt-empty" style="text-align:center; padding:80px 20px; color:var(--muted)">
+      <div style="font-size:48px; margin-bottom:16px">🔬</div>
+      <div style="font-size:16px; font-weight:600; margin-bottom:8px">Run a Backtest</div>
+      <div style="font-size:13px">Pick a date range above and click <strong style="color:var(--text)">Run Backtest</strong> to simulate trades using historical SENSEX data.</div>
+    </div>
+
+  </div>
+
 </main>
 
 <script>
   const API = 'http://localhost:5050';
   let allTrades = [];
+
+  // Pre-fill backtest dates to today
+  (function() {
+    const today = new Date().toISOString().slice(0, 10);
+    const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
+    document.getElementById('bt-from').value = weekAgo;
+    document.getElementById('bt-to').value = today;
+  })();
 
   function switchTab(id, btn) {
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
@@ -432,10 +586,11 @@
 
       // Stats
       document.getElementById('capital').textContent = fmt(d.capital);
-      document.getElementById('capital').className = 'stat-value ' + colorClass(d.capital - 100000);
+      document.getElementById('capital').className = 'stat-value ' + colorClass(d.capital - (d.initial_capital || 100000));
 
       if (d.capital != null) {
-        const diff = d.capital - 100000;
+        const initCap = d.initial_capital || 100000;
+        const diff = d.capital - initCap;
         const el = document.getElementById('capitalChange');
         el.textContent = (diff >= 0 ? '+' : '') + fmt(diff) + ' from start';
         el.className = 'stat-sub ' + colorClass(diff);
@@ -573,6 +728,175 @@
 
     } catch(e) {}
   }
+
+  // ── Backtest ──────────────────────────────────────────────
+  async function runBacktest() {
+    const fromDate = document.getElementById('bt-from').value;
+    const toDate   = document.getElementById('bt-to').value;
+    if (!fromDate || !toDate) {
+      showBtError('Please select both From and To dates.');
+      return;
+    }
+    if (fromDate > toDate) {
+      showBtError('From date must be before or equal to To date.');
+      return;
+    }
+
+    const btn = document.getElementById('bt-run-btn');
+    const spinner = document.getElementById('bt-spinner');
+    const label = document.getElementById('bt-btn-label');
+    btn.disabled = true;
+    spinner.style.display = 'block';
+    label.textContent = 'Running…';
+    document.getElementById('bt-error').style.display = 'none';
+    document.getElementById('bt-results').style.display = 'none';
+    document.getElementById('bt-empty').style.display = 'none';
+    document.getElementById('bt-info-bar').textContent = 'Fetching data & running simulation…';
+
+    try {
+      const res = await fetch(API + '/api/backtest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ from_date: fromDate, to_date: toDate })
+      });
+      const d = await res.json();
+
+      if (!res.ok || d.error) {
+        showBtError((d.error || 'Unknown error') + (d.detail ? '\n' + d.detail : ''));
+        document.getElementById('bt-empty').style.display = 'block';
+        return;
+      }
+
+      renderBtResults(d, fromDate, toDate);
+    } catch(e) {
+      // SyntaxError = server returned HTML (404/500 page) instead of JSON
+      if (e instanceof SyntaxError) {
+        showBtError('Server returned an unexpected response (HTML instead of JSON). ' +
+          'The server may be running an outdated version — please restart it with: ' +
+          'python -m live.run_backtest_server');
+      } else {
+        showBtError('Cannot connect to the server. Start it with:\n' +
+          'python -m live.run_backtest_server');
+      }
+      document.getElementById('bt-empty').style.display = 'block';
+    } finally {
+      btn.disabled = false;
+      spinner.style.display = 'none';
+      label.textContent = '▶ Run Backtest';
+    }
+  }
+
+  function showBtError(msg) {
+    const el = document.getElementById('bt-error');
+    el.textContent = '⚠ ' + msg;
+    el.style.display = 'block';
+  }
+
+  function renderBtResults(d, fromDate, toDate) {
+    const m = d.metrics || {};
+    const trades = d.trades || [];
+
+    // Info bar
+    document.getElementById('bt-info-bar').textContent =
+      `${d.total_candles} candles (${d.warmup_bars} warmup + ${d.live_bars} live) · ${fromDate} → ${toDate}`;
+
+    // Metrics grid
+    const mGrid = document.getElementById('bt-metrics-grid');
+    const winRateColor = (m.win_rate || 0) >= 0.5 ? 'var(--green)' : (m.win_rate || 0) >= 0.33 ? 'var(--yellow)' : 'var(--red)';
+    mGrid.innerHTML = [
+      ['Total Trades',       trades.length,                                                    'var(--blue)'],
+      ['Win Rate',          ((m.win_rate || 0)*100).toFixed(1) + '%',                           winRateColor],
+      ['Profit Factor',     (m.profit_factor || 0).toFixed(2),                                 (m.profit_factor||0) >= 1 ? 'var(--green)' : 'var(--red)'],
+      ['Avg Trade',         fmt(m.average_trade),                                              colorVal(m.average_trade)],
+      ['Expectancy',        fmt(m.expectancy),                                                 colorVal(m.expectancy)],
+      ['Sharpe Ratio',      (m.sharpe_ratio || 0).toFixed(2),                                  (m.sharpe_ratio||0) > 1 ? 'var(--green)' : 'var(--muted)'],
+      ['Max Drawdown',      fmt(-(m.max_drawdown || 0)),                                        'var(--red)'],
+      ['Max Cons. Wins',    m.max_consecutive_wins || 0,                                       'var(--green)'],
+      ['Max Cons. Losses',  m.max_consecutive_losses || 0,                                     'var(--red)'],
+    ].map(([label, val, color]) => `
+      <div class="bt-metric-card">
+        <div class="bt-metric-label">${label}</div>
+        <div class="bt-metric-value" style="color:${color}">${val}</div>
+      </div>`).join('');
+
+    // Monthly breakdown
+    const mr = d.monthly_returns || {};
+    const maxAbs = Math.max(...Object.values(mr).map(v => Math.abs(v.pnl)), 1);
+    document.getElementById('bt-monthly-grid').innerHTML = Object.entries(mr).map(([month, v]) => {
+      const wr = v.trades > 0 ? ((v.wins / v.trades)*100).toFixed(0)+'%' : '–';
+      const barW = (Math.abs(v.pnl)/maxAbs*100).toFixed(1);
+      const barColor = v.pnl >= 0 ? 'var(--green)' : 'var(--red)';
+      return `<div class="month-card">
+        <div class="month-card-header">
+          <div class="month-name">${month}</div>
+          <div class="month-pnl ${v.pnl>=0?'positive':'negative'}">${v.pnl>=0?'+':''}${fmt(v.pnl)}</div>
+        </div>
+        <div class="month-stats">
+          <div class="month-stat">Trades <span>${v.trades}</span></div>
+          <div class="month-stat">Win Rate <span>${wr}</span></div>
+          <div class="month-stat">W/L <span>${v.wins}/${v.losses}</span></div>
+        </div>
+        <div class="month-bar-bg"><div class="month-bar" style="width:${barW}%;background:${barColor}"></div></div>
+      </div>`;
+    }).join('');
+
+    // Trades table
+    document.getElementById('bt-trades-count').textContent = trades.length + ' trades';
+    const tbody = document.getElementById('bt-trades-body');
+    if (trades.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="13"><div class="empty-state"><div class="icon">📭</div><p>No trades in this date range.</p></div></td></tr>`;
+    } else {
+      tbody.innerHTML = trades.map((t, i) => {
+        const pnlClass = (t.pnl||0) > 0 ? 'positive' : (t.pnl||0) < 0 ? 'negative' : '';
+        const dirBadge = t.direction === 'BUY_CALL'
+          ? `<span class="direction-badge call-badge">CALL ↑</span>`
+          : `<span class="direction-badge put-badge">PUT ↓</span>`;
+        const date   = t.entry_time ? t.entry_time.slice(0,10) : '–';
+        const entryT = t.entry_time ? t.entry_time.slice(11,16) : '–';
+        const exitT  = t.exit_time  ? t.exit_time.slice(11,16)  : '–';
+        const rowId  = 'bt-row-' + i;
+        const reasons = (t.entry_reasons || []).map(r =>
+          `<span class="reason-pill">${r}</span>`).join('');
+        return `
+          <tr onclick="toggleReasons('${rowId}')" style="cursor:pointer">
+            <td><button class="expand-btn" id="${rowId}-icon">▶</button></td>
+            <td style="color:var(--muted)">${trades.length - i}</td>
+            <td>${dirBadge}</td>
+            <td>${date}</td>
+            <td>${entryT}</td>
+            <td>${exitT}</td>
+            <td>₹${(t.entry_price||0).toLocaleString('en-IN')}</td>
+            <td>₹${(t.exit_price||0).toLocaleString('en-IN')}</td>
+            <td>${t.quantity}</td>
+            <td class="negative">₹${(t.stop_price||0).toLocaleString('en-IN')}</td>
+            <td class="positive">₹${(t.target_price||0).toLocaleString('en-IN')}</td>
+            <td><span class="reason-badge">${reasonLabel(t.exit_reason)}</span></td>
+            <td style="text-align:right" class="pnl-cell ${pnlClass}">${t.pnl!=null?((t.pnl>=0?'+':'')+fmt(t.pnl)):'–'}</td>
+          </tr>
+          <tr class="reasons-row" id="${rowId}">
+            <td colspan="13">
+              <div style="font-size:11px;color:var(--muted);margin-bottom:4px">Entry signals:</div>
+              <div class="reason-pills">${reasons || '<span style="color:var(--muted)">No signals recorded</span>'}</div>
+            </td>
+          </tr>`;
+      }).join('');
+    }
+
+    document.getElementById('bt-results').style.display = 'block';
+  }
+
+  function toggleReasons(rowId) {
+    const row = document.getElementById(rowId);
+    const icon = document.getElementById(rowId + '-icon');
+    if (!row) return;
+    const isOpen = row.classList.toggle('open');
+    icon.textContent = isOpen ? '▼' : '▶';
+  }
+
+  function colorVal(v) {
+    return v > 0 ? 'var(--green)' : v < 0 ? 'var(--red)' : 'var(--muted)';
+  }
+  // ── End Backtest ───────────────────────────────────────────
 
   async function refresh() {
     await Promise.all([fetchStatus(), fetchTrades()]);

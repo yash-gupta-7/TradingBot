@@ -121,6 +121,98 @@ def monthly():
     })
 
 
+@app.route("/api/backtest", methods=["POST"])
+def run_backtest():
+    """Run a walk-forward backtest over a date range and return full results.
+
+    Request JSON: { "from_date": "YYYY-MM-DD", "to_date": "YYYY-MM-DD" }
+    Response JSON: { trades: [...], metrics: {...}, monthly_returns: {...},
+                     warmup_bars: N, live_bars: N }
+    """
+    from flask import request
+    from collections import defaultdict
+
+    body = request.get_json(silent=True) or {}
+    from_date = body.get("from_date", "")
+    to_date = body.get("to_date", "")
+
+    if not from_date or not to_date:
+        return jsonify({"error": "from_date and to_date are required"}), 400
+
+    try:
+        # Lazy imports so the live server doesn't load backtest deps at startup
+        from kite.auth import get_kite_client
+        from backtest.data_loader import fetch_with_warmup
+        from backtest.engine import BacktestEngine
+        from backtest.metrics import compute_metrics
+        from utils.config import load_config
+
+        cfg = load_config("config/config.yaml")
+        kite = get_kite_client()
+
+        # Resolve SENSEX instrument token
+        instruments = kite.instruments(cfg["instrument"]["exchange"])
+        match = next(
+            i for i in instruments
+            if i["tradingsymbol"] == cfg["instrument"]["index_symbol"]
+            and i["segment"] == "INDICES"
+        )
+        token = match["instrument_token"]
+
+        df_1m, live_from = fetch_with_warmup(
+            kite, token, from_date, to_date, warmup_days=7
+        )
+        live_bars = int(len(df_1m[df_1m.index >= live_from]))
+        warmup_bars_count = int(len(df_1m)) - live_bars
+
+        engine = BacktestEngine(df_1m, cfg, live_from=live_from)
+        bt_trades = engine.run()
+        metrics = compute_metrics(bt_trades)
+
+        # Build monthly breakdown
+        months: dict[str, dict] = defaultdict(
+            lambda: {"pnl": 0.0, "trades": 0, "wins": 0, "losses": 0}
+        )
+        for t in bt_trades:
+            if t.exit_time is None or t.pnl is None:
+                continue
+            mk = t.exit_time.strftime("%Y-%m")
+            months[mk]["pnl"] += t.pnl
+            months[mk]["trades"] += 1
+            if t.pnl >= 0:
+                months[mk]["wins"] += 1
+            else:
+                months[mk]["losses"] += 1
+
+        trade_list = [_trade_to_dict(t) for t in reversed(bt_trades)]
+
+        # Remove non-JSON-serialisable keys from metrics
+        safe_metrics = {
+            k: (round(float(v), 4) if isinstance(v, float) else v)
+            for k, v in metrics.items()
+            if k not in ("equity_curve",)
+        }
+
+        return jsonify({
+            "trades": trade_list,
+            "metrics": safe_metrics,
+            "monthly_returns": {
+                k: {"pnl": round(v["pnl"], 2), "trades": v["trades"],
+                    "wins": v["wins"], "losses": v["losses"]}
+                for k, v in months.items()
+            },
+            "total_candles": int(len(df_1m)),
+            "warmup_bars": warmup_bars_count,
+            "live_bars": live_bars,
+        })
+
+    except StopIteration:
+        return jsonify({"error": "SENSEX instrument not found on exchange"}), 500
+    except Exception as exc:
+        import traceback
+        return jsonify({"error": str(exc), "detail": traceback.format_exc()}), 500
+
+
 def start_server(port: int = 5050):
     """Start Flask in a background daemon thread."""
     t = threading.Thread(target=lambda: app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False), daemon=True)

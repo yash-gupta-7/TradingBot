@@ -6,7 +6,7 @@ import argparse
 import json
 
 from kite.auth import get_kite_client
-from backtest.data_loader import fetch_historical
+from backtest.data_loader import fetch_with_warmup
 from backtest.engine import BacktestEngine
 from backtest.metrics import compute_metrics
 from utils.config import load_config
@@ -32,10 +32,17 @@ def main() -> None:
     kite = get_kite_client()
     token = _resolve_sensex_token(kite, cfg["instrument"])
 
-    df_1m = fetch_historical(kite, token, args.from_date, args.to_date, interval="minute")
-    print(f"Fetched {len(df_1m)} 1-minute candles from {args.from_date} to {args.to_date}")
+    df_1m, live_from = fetch_with_warmup(
+        kite, token, args.from_date, args.to_date, warmup_days=7
+    )
+    live_bars = len(df_1m[df_1m.index >= live_from])
+    warmup_bars = len(df_1m) - live_bars
+    print(
+        f"Fetched {len(df_1m)} 1-minute candles "
+        f"({warmup_bars} warmup from prior days + {live_bars} live from {args.from_date})"
+    )
 
-    engine = BacktestEngine(df_1m, cfg)
+    engine = BacktestEngine(df_1m, cfg, live_from=live_from)
     trades = engine.run()
     metrics = compute_metrics(trades)
 

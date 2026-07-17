@@ -5,6 +5,7 @@
 import argparse
 import logging
 import time
+import os
 from datetime import datetime, time as dt_time
 
 from kiteconnect import KiteTicker
@@ -108,21 +109,38 @@ def main() -> None:
         kws.on_close = on_close
 
         try:
-            kws.connect(threaded=False)
+            kws.connect(threaded=True)
+            while True:
+                if _past_square_off(square_off_time):
+                    logging.info("Bot done for the day. ✅")
+                    kws.close()
+                    set_stopped()
+                    break
+                
+                # If websocket drops, break out to trigger the reconnect loop
+                if not kws.is_connected():
+                    # Short delay to allow connect() to finish its initial handshake
+                    time.sleep(2)
+                    if not kws.is_connected():
+                        break
+                        
+                time.sleep(1)
         except Exception as e:
             logging.error(f"WebSocket connection failed: {e}")
 
-        # If we get here, the socket has closed
         if _past_square_off(square_off_time):
-            logging.info("Bot done for the day. ✅")
-            set_stopped()
             break
 
         wait = min(30, 5 * attempt)
         logging.info(f"Reconnecting in {wait} seconds...")
         time.sleep(wait)
+    
+    os._exit(0)
 
 
 if __name__ == "__main__":
-    main()
-
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\nForce closing by user...")
+        os._exit(0)

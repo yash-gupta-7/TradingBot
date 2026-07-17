@@ -38,14 +38,18 @@ def generate_signal(df_1m: pd.DataFrame, df_5m: pd.DataFrame, cfg: dict) -> Sign
     ema_fast = calculate_ema(df_1m["close"], ind["ema_fast_length"])
     ema_slow = calculate_ema(df_1m["close"], ind["ema_slow_length"])
     slope_fast = ema_slope(ema_fast, ind["ema_slope_lookback"])
-    ema_signal = ema_cross_signal(ema_fast, ema_slow, slope_fast, ind["ema_slope_threshold"])
+    slope_slow = ema_slope(ema_slow, ind["ema_slope_lookback"])
+    ema_signal = ema_cross_signal(
+        ema_fast, ema_slow, slope_fast, slope_slow, ind["ema_slope_threshold"]
+    )
     if ema_signal != st_trend:
-        return Signal(direction=None, reasons=["no EMA crossover matching trend direction"])
+        return Signal(direction=None, reasons=["EMA alignment/slope does not confirm trend direction"])
 
     direction = "BUY_CALL" if st_trend == "bullish" else "SELL_PUT"
     reasons = [
         f"higher timeframe trend: {higher_trend}",
         f"dual SuperTrend agrees: {st_trend}",
-        f"EMA{ind['ema_fast_length']}/EMA{ind['ema_slow_length']} cross: {ema_signal} (slope={slope_fast:.4f})",
+        f"EMA{ind['ema_fast_length']}/EMA{ind['ema_slow_length']} aligned: {ema_signal} "
+        f"(slope_fast={slope_fast:.2f}, slope_slow={slope_slow:.2f})",
     ]
     return Signal(direction=direction, reasons=reasons)

@@ -51,13 +51,16 @@ class PaperEngine:
             ema_fast = calculate_ema(self.df_1m["close"], ind["ema_fast_length"])
             ema_slow = calculate_ema(self.df_1m["close"], ind["ema_slow_length"])
             slope_fast = ema_slope(ema_fast, ind["ema_slope_lookback"])
+            slope_slow = ema_slope(ema_slow, ind["ema_slope_lookback"])
             self.last_ema_signal = ema_cross_signal(
-                ema_fast, ema_slow, slope_fast, self.cfg["indicators"]["ema_slope_threshold"]
+                ema_fast, ema_slow, slope_fast, slope_slow, self.cfg["indicators"]["ema_slope_threshold"]
             )
         else:
             self.last_st_value = 0
             self.last_st_trend = 0
             self.last_ema_signal = None
+            
+        self._load_state()
 
     def on_tick(self, tick: dict):
         if self.trading_halted_today:
@@ -131,8 +134,9 @@ class PaperEngine:
         ema_fast = calculate_ema(self.df_1m["close"], ind["ema_fast_length"])
         ema_slow = calculate_ema(self.df_1m["close"], ind["ema_slow_length"])
         slope_fast = ema_slope(ema_fast, ind["ema_slope_lookback"])
+        slope_slow = ema_slope(ema_slow, ind["ema_slope_lookback"])
         self.last_ema_signal = ema_cross_signal(
-            ema_fast, ema_slow, slope_fast, self.cfg["indicators"]["ema_slope_threshold"]
+            ema_fast, ema_slow, slope_fast, slope_slow, self.cfg["indicators"]["ema_slope_threshold"]
         )
 
     def _within_trading_hours(self, now: pd.Timestamp) -> bool:
@@ -143,9 +147,12 @@ class PaperEngine:
         return False
 
     def _check_entry(self):
-        # We need at least warmup_bars in 5m to generate a signal properly, 
-        # but populate_indicators already ran. We just pass the DFs.
-        signal = generate_signal(self.df_1m, self.df_5m, self.cfg)
+        # We must only pass FULLY CLOSED 5m candles to generate_signal,
+        # otherwise we evaluate against a partial/incomplete higher-timeframe bar.
+        now = self.df_1m.index[-1]
+        closed_5m = self.df_5m[self.df_5m.index + pd.Timedelta(minutes=5) <= now]
+        
+        signal = generate_signal(self.df_1m, closed_5m, self.cfg)
         if signal.direction:
             self._enter_trade(signal)
 
@@ -178,9 +185,13 @@ class PaperEngine:
         )
         self.trades_today += 1
         logger.info(f"ENTERED TRADE: {signal.direction} at {entry_price} (SL: {stop_price}, TG: {target_price})")
+        self._save_state()
 
     def _manage_tick(self, now: pd.Timestamp, price: float):
+        old_stop = self.open_trade.stop_price
         self.open_trade.stop_price = self.tracker.update(price, self.last_st_value)
+        if self.open_trade.stop_price != old_stop:
+            self._save_state()
 
         direction = self.open_trade.direction
         hit_target = price >= self.open_trade.target_price if direction == "BUY_CALL" else price <= self.open_trade.target_price
@@ -228,3 +239,111 @@ class PaperEngine:
 
         self.open_trade = None
         self.tracker = None
+        self._save_state()
+
+    def _save_state(self):
+        import json
+        state = {
+            "date": str(self.current_day),
+            "capital": self.capital,
+            "day_start_capital": self.day_start_capital,
+            "trades_today": self.trades_today,
+            "consecutive_losses": self.consecutive_losses,
+            "trading_halted_today": self.trading_halted_today,
+            "trades": [
+                {
+                    "entry_time": t.entry_time.isoformat() if t.entry_time else None,
+                    "direction": t.direction,
+                    "entry_price": t.entry_price,
+                    "quantity": t.quantity,
+                    "stop_price": t.stop_price,
+                    "target_price": t.target_price,
+                    "entry_reasons": t.entry_reasons,
+                    "exit_time": t.exit_time.isoformat() if t.exit_time else None,
+                    "exit_price": t.exit_price,
+                    "exit_reason": t.exit_reason,
+                } for t in self.trades
+            ],
+            "open_trade": None,
+            "tracker": None
+        }
+        if self.open_trade:
+            t = self.open_trade
+            state["open_trade"] = {
+                "entry_time": t.entry_time.isoformat() if t.entry_time else None,
+                "direction": t.direction,
+                "entry_price": t.entry_price,
+                "quantity": t.quantity,
+                "stop_price": t.stop_price,
+                "target_price": t.target_price,
+                "entry_reasons": t.entry_reasons,
+            }
+            state["tracker"] = {
+                "current_stop": self.tracker.current_stop,
+                "trailing_active": self.tracker.trailing_active,
+                "breakeven_triggered": self.tracker.breakeven_triggered,
+            }
+        with open(".paper_state.json", "w") as f:
+            json.dump(state, f)
+
+    def _load_state(self):
+        import json
+        import os
+        if not os.path.exists(".paper_state.json"):
+            return
+        
+        try:
+            with open(".paper_state.json", "r") as f:
+                state = json.load(f)
+            
+            def _dict_to_trade(d):
+                return Trade(
+                    entry_time=pd.Timestamp(d["entry_time"]) if d.get("entry_time") else None,
+                    direction=d["direction"],
+                    entry_price=d["entry_price"],
+                    quantity=d["quantity"],
+                    stop_price=d["stop_price"],
+                    target_price=d["target_price"],
+                    entry_reasons=d.get("entry_reasons", []),
+                    exit_time=pd.Timestamp(d["exit_time"]) if d.get("exit_time") else None,
+                    exit_price=d.get("exit_price"),
+                    exit_reason=d.get("exit_reason"),
+                )
+
+            self.trades = [_dict_to_trade(t) for t in state.get("trades", [])]
+
+            if state.get("date") != str(self.current_day):
+                # New day! Keep account capital and trade history, but reset daily limits
+                if "capital" in state:
+                    self.capital = state["capital"]
+                self.day_start_capital = self.capital
+                self.trades_today = 0
+                self.consecutive_losses = 0
+                self.trading_halted_today = False
+                logger.info(f"Loaded {len(self.trades)} historical trades. Starting new day with ₹{self.capital:.2f} capital.")
+                return
+            
+            self.capital = state["capital"]
+            self.day_start_capital = state["day_start_capital"]
+            self.trades_today = state["trades_today"]
+            self.consecutive_losses = state["consecutive_losses"]
+            self.trading_halted_today = state["trading_halted_today"]
+            
+            if state.get("open_trade"):
+                self.open_trade = _dict_to_trade(state["open_trade"])
+                tr_data = state.get("tracker")
+                if tr_data:
+                    self.tracker = TrailingStopTracker(
+                        self.open_trade.direction,
+                        self.open_trade.entry_price,
+                        self.open_trade.stop_price,
+                        self.cfg["risk"]["breakeven_r"],
+                        self.cfg["risk"]["trail_start_r"]
+                    )
+                    self.tracker.current_stop = tr_data["current_stop"]
+                    self.tracker.trailing_active = tr_data["trailing_active"]
+                    self.tracker.breakeven_triggered = tr_data["breakeven_triggered"]
+            
+            logger.info(f"Restored paper trading state: {len(self.trades)} trades total, {self.trades_today} trades today.")
+        except Exception as e:
+            logger.error(f"Failed to load paper state: {e}")
