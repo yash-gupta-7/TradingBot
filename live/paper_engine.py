@@ -4,6 +4,8 @@ import pandas as pd
 
 from backtest.data_loader import resample_to_5min
 from backtest.engine import Trade
+from db.trades_db import init_db, insert_trade_entry, update_trade_exit
+from execution.order_manager import PaperOrderManager
 from risk.risk_manager import (
     TrailingStopTracker,
     calculate_position_size,
@@ -16,11 +18,27 @@ logger = logging.getLogger(__name__)
 
 
 class PaperEngine:
-    def __init__(self, instrument_token: int, df_1m: pd.DataFrame, cfg: dict, kite=None):
+    def __init__(
+        self,
+        instrument_token: int,
+        df_1m: pd.DataFrame,
+        cfg: dict,
+        kite=None,
+        order_manager=None,
+        mode: str = "paper",
+        db_path: str = "db/trades.sqlite3",
+        state_path: str = ".paper_state.json",
+    ):
         self.instrument_token = instrument_token
         self.cfg = cfg
         self.kite = kite
-        
+        self.mode = mode
+        self.order_manager = order_manager if order_manager is not None else PaperOrderManager(kite)
+        self.db_path = db_path
+        self.state_path = state_path
+        init_db(self.db_path)
+        self.open_trade_db_id: int | None = None
+
         self.df_1m = df_1m.copy()
         if hasattr(self.df_1m.index, 'tz') and self.df_1m.index.tz is not None:
             self.df_1m.index = self.df_1m.index.tz_localize(None)
@@ -157,36 +175,31 @@ class PaperEngine:
         if signal.direction:
             self._enter_trade(signal)
 
-    def _get_atm_option(self, entry_price: float, direction: str):
-        if not hasattr(self, "kite") or self.kite is None:
-            return None, None
-            
+    def _resolve_atm_symbol(self, entry_price: float, direction: str) -> str | None:
+        if self.kite is None:
+            return None
         try:
             strike = round(entry_price / 100) * 100
             opt_type = "CE" if direction == "BUY_CALL" else "PE"
-            
+
             bfo = self.kite.instruments("BFO")
             today = pd.Timestamp.now().normalize()
-            
+
             options = []
             for i in bfo:
                 if i["name"] == "SENSEX" and i["strike"] == strike and i["instrument_type"] == opt_type:
                     exp_date = pd.Timestamp(i["expiry"]).normalize()
                     if exp_date >= today:
                         options.append((exp_date, i["tradingsymbol"]))
-            
+
             if not options:
-                return None, None
-                
+                return None
+
             options.sort(key=lambda x: x[0])
-            nearest_symbol = options[0][1]
-            
-            quote = self.kite.quote([f"BFO:{nearest_symbol}"])
-            last_price = quote.get(f"BFO:{nearest_symbol}", {}).get("last_price")
-            return nearest_symbol, last_price
+            return options[0][1]
         except Exception as e:
-            logger.error(f"Failed to fetch option chain: {e}")
-            return None, None
+            logger.error(f"Failed to resolve ATM option symbol: {e}")
+            return None
 
     def _enter_trade(self, signal) -> None:
         entry_price = self.df_1m["close"].iloc[-1]
@@ -203,7 +216,11 @@ class PaperEngine:
             return
         target_price = calculate_target(signal.direction, entry_price, stop_price, self.cfg["risk"]["reward_risk_ratio"])
 
-        option_symbol, option_entry_price = self._get_atm_option(entry_price, signal.direction)
+        option_symbol = self._resolve_atm_symbol(entry_price, signal.direction)
+        fill = self.order_manager.submit_entry(option_symbol, qty)
+        if fill.status != "filled":
+            logger.warning(f"Entry order for {option_symbol} was {fill.status}; skipping trade")
+            return
 
         self.open_trade = Trade(
             entry_time=self.df_1m.index[-1],
@@ -214,12 +231,17 @@ class PaperEngine:
             target_price=target_price,
             entry_reasons=signal.reasons,
             option_symbol=option_symbol,
-            option_entry_price=option_entry_price,
+            option_entry_price=fill.price,
         )
         self.tracker = TrailingStopTracker(
             signal.direction, entry_price, stop_price, self.cfg["risk"]["breakeven_r"], self.cfg["risk"]["trail_start_r"]
         )
         self.trades_today += 1
+        self.open_trade_db_id = insert_trade_entry(
+            self.db_path, self.mode, self.open_trade.entry_time.isoformat(),
+            self.open_trade.direction, option_symbol, float(entry_price),
+            self.open_trade.option_entry_price, qty, float(stop_price), float(target_price),
+        )
         logger.info(f"ENTERED TRADE: {signal.direction} at {entry_price} (SL: {stop_price}, TG: {target_price})")
         self._save_state()
 
@@ -253,13 +275,29 @@ class PaperEngine:
         elif ema_reversed:
             self._close_trade(now, price, "ema_reversal")
 
+    def _realized_pnl(self, trade: Trade) -> float:
+        if self.mode == "live" and trade.option_entry_price is not None and trade.option_exit_price is not None:
+            return (trade.option_exit_price - trade.option_entry_price) * trade.quantity
+        return trade.pnl
+
     def _close_trade(self, exit_time: pd.Timestamp, exit_price: float, reason: str) -> None:
+        exit_fill = self.order_manager.submit_exit(self.open_trade.option_symbol, self.open_trade.quantity)
+        if exit_fill.status != "filled":
+            logger.critical(
+                f"Exit order failed for {self.open_trade.option_symbol}; leaving position open and "
+                "halting trading for the day pending manual review."
+            )
+            self.trading_halted_today = True
+            self._save_state()
+            return
+
         self.open_trade.exit_time = exit_time
         self.open_trade.exit_price = exit_price
         self.open_trade.exit_reason = reason
+        self.open_trade.option_exit_price = exit_fill.price
         self.trades.append(self.open_trade)
 
-        pnl = self.open_trade.pnl
+        pnl = self._realized_pnl(self.open_trade)
         self.capital += pnl
         self.consecutive_losses = self.consecutive_losses + 1 if pnl < 0 else 0
 
@@ -272,6 +310,13 @@ class PaperEngine:
         if daily_loss_pct >= self.cfg["risk"]["max_daily_loss_pct"]:
             self.trading_halted_today = True
             logger.info("HALTED: Max daily loss reached.")
+
+        if self.open_trade_db_id is not None:
+            update_trade_exit(
+                self.db_path, self.open_trade_db_id, exit_time.isoformat(),
+                float(exit_price), self.open_trade.option_exit_price, reason, float(pnl),
+            )
+            self.open_trade_db_id = None
 
         self.open_trade = None
         self.tracker = None
@@ -323,17 +368,17 @@ class PaperEngine:
                 "trailing_active": self.tracker.trailing_active,
                 "breakeven_triggered": self.tracker.breakeven_triggered,
             }
-        with open(".paper_state.json", "w") as f:
+        with open(self.state_path, "w") as f:
             json.dump(state, f)
 
     def _load_state(self):
         import json
         import os
-        if not os.path.exists(".paper_state.json"):
+        if not os.path.exists(self.state_path):
             return
-        
+
         try:
-            with open(".paper_state.json", "r") as f:
+            with open(self.state_path, "r") as f:
                 state = json.load(f)
             
             def _dict_to_trade(d):

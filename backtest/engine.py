@@ -30,6 +30,7 @@ class Trade:
     entry_reasons: list[str] = field(default_factory=list)
     option_symbol: str | None = None
     option_entry_price: float | None = None
+    option_exit_price: float | None = None
     exit_time: pd.Timestamp | None = None
     exit_price: float | None = None
     exit_reason: str | None = None
