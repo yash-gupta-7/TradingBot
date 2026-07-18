@@ -4,7 +4,7 @@ import pandas as pd
 
 from backtest.data_loader import resample_to_5min
 from backtest.engine import Trade
-from db.trades_db import init_db, insert_trade_entry, update_trade_exit
+from db.trades_db import get_trade_by_id, init_db, insert_trade_entry, load_daily_state, update_trade_exit
 from execution.order_manager import PaperOrderManager
 from risk.risk_manager import (
     TrailingStopTracker,
@@ -434,3 +434,72 @@ class PaperEngine:
             logger.info(f"Restored paper trading state: {len(self.trades)} trades total, {self.trades_today} trades today.")
         except Exception as e:
             logger.error(f"Failed to load paper state: {e}")
+
+    def reconcile_live_position(self) -> None:
+        """Live-mode-only startup recovery: rebuild today's halt-state
+        counters from the SQLite trade log, then check the broker for a
+        real open position and resume monitoring it only if it matches
+        our own record. Called explicitly by run_live.py before the tick
+        loop starts."""
+        today = str(self.current_day)
+        state = load_daily_state(
+            self.db_path, self.mode, today,
+            initial_capital=self.cfg["backtest"]["initial_capital"],
+            max_consecutive_losses=self.cfg["risk"]["max_consecutive_losses"],
+            max_daily_loss_pct=self.cfg["risk"]["max_daily_loss_pct"],
+        )
+        self.capital = state["capital"]
+        self.day_start_capital = state["day_start_capital"]
+        self.trades_today = state["trades_today"]
+        self.consecutive_losses = state["consecutive_losses"]
+        self.trading_halted_today = state["trading_halted_today"]
+        self.open_trade_db_id = state["open_trade_id"]
+
+        positions = self.kite.positions().get("net", [])
+
+        if self.open_trade_db_id is None:
+            self.open_trade = None
+            self.tracker = None
+            stray = [
+                p for p in positions
+                if p.get("exchange") == "BFO" and str(p.get("tradingsymbol", "")).startswith("SENSEX")
+                and p.get("quantity", 0) != 0
+            ]
+            if stray:
+                logger.critical(
+                    f"Broker reports {len(stray)} open SENSEX option position(s) with no matching trade "
+                    "in our log. Refusing to auto-trade until this is resolved manually."
+                )
+                self.trading_halted_today = True
+            return
+
+        row = get_trade_by_id(self.db_path, self.open_trade_db_id)
+        broker_position = next(
+            (p for p in positions if p.get("tradingsymbol") == row["option_symbol"] and p.get("quantity", 0) != 0),
+            None,
+        )
+        if broker_position is None:
+            logger.critical(
+                f"SQLite has an open trade (id={self.open_trade_db_id}, symbol={row['option_symbol']}) but "
+                "the broker reports no matching position. Refusing to auto-trade until this is resolved."
+            )
+            self.trading_halted_today = True
+            self.open_trade = None
+            self.tracker = None
+            return
+
+        self.open_trade = Trade(
+            entry_time=pd.Timestamp(row["entry_time"]),
+            direction=row["direction"],
+            entry_price=row["index_entry_price"],
+            quantity=row["quantity"],
+            stop_price=row["stop_price"],
+            target_price=row["target_price"],
+            option_symbol=row["option_symbol"],
+            option_entry_price=row["option_entry_price"],
+        )
+        self.tracker = TrailingStopTracker(
+            self.open_trade.direction, self.open_trade.entry_price, self.open_trade.stop_price,
+            self.cfg["risk"]["breakeven_r"], self.cfg["risk"]["trail_start_r"],
+        )
+        logger.info(f"Reconciled open live position: {row['option_symbol']} qty={row['quantity']}")

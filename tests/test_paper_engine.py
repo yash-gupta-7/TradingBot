@@ -143,3 +143,93 @@ def test_close_trade_leaves_position_open_when_exit_order_fails(tmp_path):
 
     assert engine.open_trade is not None  # still open — exit not confirmed
     assert engine.trading_halted_today is True
+
+
+from db.trades_db import init_db as _init_db, insert_trade_entry as _insert_trade_entry
+
+
+class _FakeKitePositions:
+    def __init__(self, net):
+        self._net = net
+
+    def positions(self):
+        return {"net": self._net}
+
+
+def test_reconcile_resumes_matching_open_position(tmp_path):
+    db_path = str(tmp_path / "trades.sqlite3")
+    _init_db(db_path)
+    trade_id = _insert_trade_entry(
+        db_path, "live", "2026-07-18T09:30:00", "BUY_CALL", "SENSEX2572575000CE",
+        75000.0, 150.0, 20, 74900.0, 75150.0,
+    )
+    kite = _FakeKitePositions([{"tradingsymbol": "SENSEX2572575000CE", "exchange": "BFO", "quantity": 20}])
+    engine = PaperEngine(
+        instrument_token=1, df_1m=_flat_df(), cfg=CFG, kite=kite,
+        order_manager=_StubOrderManager(), mode="live", db_path=db_path,
+        state_path=str(tmp_path / "paper_state.json"),
+    )
+    engine.current_day = pd.Timestamp("2026-07-18").date()
+
+    engine.reconcile_live_position()
+
+    assert engine.open_trade is not None
+    assert engine.open_trade.option_symbol == "SENSEX2572575000CE"
+    assert engine.open_trade_db_id == trade_id
+    assert engine.tracker is not None
+    assert engine.trading_halted_today is False
+
+
+def test_reconcile_halts_when_broker_position_unmatched(tmp_path):
+    db_path = str(tmp_path / "trades.sqlite3")
+    _init_db(db_path)
+    _insert_trade_entry(
+        db_path, "live", "2026-07-18T09:30:00", "BUY_CALL", "SENSEX2572575000CE",
+        75000.0, 150.0, 20, 74900.0, 75150.0,
+    )
+    kite = _FakeKitePositions([])  # broker shows nothing
+    engine = PaperEngine(
+        instrument_token=1, df_1m=_flat_df(), cfg=CFG, kite=kite,
+        order_manager=_StubOrderManager(), mode="live", db_path=db_path,
+        state_path=str(tmp_path / "paper_state.json"),
+    )
+    engine.current_day = pd.Timestamp("2026-07-18").date()
+
+    engine.reconcile_live_position()
+
+    assert engine.trading_halted_today is True
+    assert engine.open_trade is None
+
+
+def test_reconcile_halts_on_stray_broker_position(tmp_path):
+    db_path = str(tmp_path / "trades.sqlite3")
+    _init_db(db_path)
+    kite = _FakeKitePositions([{"tradingsymbol": "SENSEX2572575000PE", "exchange": "BFO", "quantity": 20}])
+    engine = PaperEngine(
+        instrument_token=1, df_1m=_flat_df(), cfg=CFG, kite=kite,
+        order_manager=_StubOrderManager(), mode="live", db_path=db_path,
+        state_path=str(tmp_path / "paper_state.json"),
+    )
+    engine.current_day = pd.Timestamp("2026-07-18").date()
+
+    engine.reconcile_live_position()
+
+    assert engine.trading_halted_today is True
+    assert engine.open_trade is None
+
+
+def test_reconcile_cold_start_is_noop(tmp_path):
+    db_path = str(tmp_path / "trades.sqlite3")
+    _init_db(db_path)
+    kite = _FakeKitePositions([])
+    engine = PaperEngine(
+        instrument_token=1, df_1m=_flat_df(), cfg=CFG, kite=kite,
+        order_manager=_StubOrderManager(), mode="live", db_path=db_path,
+        state_path=str(tmp_path / "paper_state.json"),
+    )
+    engine.current_day = pd.Timestamp("2026-07-18").date()
+
+    engine.reconcile_live_position()
+
+    assert engine.open_trade is None
+    assert engine.trading_halted_today is False
