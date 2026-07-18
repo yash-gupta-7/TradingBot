@@ -257,6 +257,24 @@ def test_kill_with_no_open_position_just_halts(tmp_path):
     assert engine.trading_halted_today is True
 
 
+def test_kill_with_rejected_exit_reports_position_not_closed(tmp_path):
+    class _FailingExitOrderManager(_StubOrderManager):
+        def submit_exit(self, option_symbol, quantity):
+            self.exit_calls.append((option_symbol, quantity))
+            return Fill(status="rejected", price=None, order_id=None)
+
+    om = _FailingExitOrderManager()
+    engine = _make_engine(tmp_path, order_manager=om, mode="live")
+    engine._enter_trade(Signal(direction="BUY_CALL", reasons=["test"]))
+    assert engine.open_trade is not None
+
+    result = engine.kill(reason="test kill")
+
+    assert result == {"closed_position": False, "halted": True}
+    assert engine.open_trade is not None
+    assert engine.trading_halted_today is True
+
+
 def test_kill_persists_halt_across_reconciliation(tmp_path):
     db_path = str(tmp_path / "trades.sqlite3")
     engine = PaperEngine(
