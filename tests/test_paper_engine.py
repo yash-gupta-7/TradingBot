@@ -233,3 +233,46 @@ def test_reconcile_cold_start_is_noop(tmp_path):
 
     assert engine.open_trade is None
     assert engine.trading_halted_today is False
+
+
+def test_kill_closes_open_position_and_halts(tmp_path):
+    om = _StubOrderManager(entry_price=150.0, exit_price=180.0)
+    engine = _make_engine(tmp_path, order_manager=om, mode="live")
+    engine._enter_trade(Signal(direction="BUY_CALL", reasons=["test"]))
+    assert engine.open_trade is not None
+
+    result = engine.kill(reason="test kill")
+
+    assert result == {"closed_position": True, "halted": True}
+    assert engine.open_trade is None
+    assert engine.trading_halted_today is True
+
+
+def test_kill_with_no_open_position_just_halts(tmp_path):
+    engine = _make_engine(tmp_path, order_manager=_StubOrderManager(), mode="live")
+
+    result = engine.kill(reason="test kill")
+
+    assert result == {"closed_position": False, "halted": True}
+    assert engine.trading_halted_today is True
+
+
+def test_kill_persists_halt_across_reconciliation(tmp_path):
+    db_path = str(tmp_path / "trades.sqlite3")
+    engine = PaperEngine(
+        instrument_token=1, df_1m=_flat_df(), cfg=CFG, kite=_FakeKitePositions([]),
+        order_manager=_StubOrderManager(), mode="live", db_path=db_path,
+        state_path=str(tmp_path / "paper_state.json"),
+    )
+    engine.current_day = pd.Timestamp("2026-07-18").date()
+    engine.kill(reason="test kill")
+
+    engine2 = PaperEngine(
+        instrument_token=1, df_1m=_flat_df(), cfg=CFG, kite=_FakeKitePositions([]),
+        order_manager=_StubOrderManager(), mode="live", db_path=db_path,
+        state_path=str(tmp_path / "paper_state2.json"),
+    )
+    engine2.current_day = pd.Timestamp("2026-07-18").date()
+    engine2.reconcile_live_position()
+
+    assert engine2.trading_halted_today is True

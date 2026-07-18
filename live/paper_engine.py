@@ -4,7 +4,7 @@ import pandas as pd
 
 from backtest.data_loader import resample_to_5min
 from backtest.engine import Trade
-from db.trades_db import get_trade_by_id, init_db, insert_trade_entry, load_daily_state, update_trade_exit
+from db.trades_db import get_trade_by_id, init_db, insert_trade_entry, load_daily_state, set_daily_halt, update_trade_exit
 from execution.order_manager import PaperOrderManager
 from risk.risk_manager import (
     TrailingStopTracker,
@@ -503,3 +503,17 @@ class PaperEngine:
             self.cfg["risk"]["breakeven_r"], self.cfg["risk"]["trail_start_r"],
         )
         logger.info(f"Reconciled open live position: {row['option_symbol']} qty={row['quantity']}")
+
+    def kill(self, reason: str = "manual kill switch") -> dict:
+        """Immediately market-exits any open position and halts trading
+        for the rest of the day. Persisted so a restart stays halted."""
+        closed = False
+        if self.open_trade is not None:
+            exit_index_price = self.df_1m["close"].iloc[-1] if not self.df_1m.empty else self.open_trade.entry_price
+            self._close_trade(pd.Timestamp.now(), exit_index_price, "kill_switch")
+            closed = self.open_trade is None  # _close_trade only clears it on a confirmed exit
+
+        self.trading_halted_today = True
+        set_daily_halt(self.db_path, self.mode, str(self.current_day), True, reason)
+        self._save_state()
+        return {"closed_position": closed, "halted": True}

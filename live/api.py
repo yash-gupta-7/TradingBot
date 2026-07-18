@@ -123,6 +123,14 @@ def monthly():
     })
 
 
+@app.route("/api/kill", methods=["POST"])
+def kill():
+    if _engine is None:
+        return jsonify({"error": "no engine running"}), 400
+    result = _engine.kill(reason="dashboard kill switch")
+    return jsonify(result)
+
+
 @app.route("/api/backtest", methods=["POST"])
 def run_backtest():
     """Run a walk-forward backtest over a date range and return full results.
