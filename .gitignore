@@ -5,3 +5,4 @@ kite/.access_token
 .venv/
 *.egg-info/
 .superpowers/
+*.sqlite3

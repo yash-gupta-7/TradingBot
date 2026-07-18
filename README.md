@@ -35,13 +35,50 @@ Prints trade count and performance metrics (win rate, profit factor, max
 drawdown, Sharpe ratio, average trade, expectancy, monthly returns, max
 consecutive wins/losses).
 
+## Phase 2 — live paper trading and real orders
+
+Run the live paper trader (simulated fills, real market data, no real
+orders):
+
+```bash
+python -m live.run_paper
+```
+
+Open `http://localhost:5050` for the live dashboard.
+
+### Going live (real money, real orders)
+
+`live.run_live` requires **all three** of the following, or it refuses to
+start:
+
+1. The `--live` CLI flag.
+2. `config.yaml`: `execution.mode: live`
+3. `config.yaml`: `execution.confirm_live: true`
+
+```bash
+python -m live.run_live --live
+```
+
+**Before your first live run**, review `config/config.yaml`:
+
+- `instrument.lot_size` — must match the real SENSEX weekly options lot
+  size, not the placeholder value.
+- `risk.risk_pct` and `risk.max_daily_loss_pct` — the checked-in values
+  are elevated test settings, not real-money position-sizing/loss-limit
+  numbers.
+
+### Kill switch
+
+To immediately flatten any open position and halt trading for the rest
+of the day, either click "Flatten & Halt" on the dashboard, or run:
+
+```bash
+python -m live.kill_switch --port 5050
+```
+
+The halt persists across a restart (backed by `db/trades.sqlite3`) —
+you must explicitly clear `daily_halt` for the day to resume.
+
 ## What's not here yet
 
-- Live/paper order execution, order manager, retry/reconciliation logic (Phase 2)
-- SQLite trade logging, daily summary reports (Phase 2)
 - Telegram alerts (Phase 3)
-- Live dashboard (Phase 3)
-- Daily halt state persisted across process restarts — the backtest engine's
-  daily-loss/consecutive-loss halt logic will be reused by Phase 2's live
-  risk manager, but live trading needs it to survive a bot restart mid-day,
-  which this phase doesn't need.

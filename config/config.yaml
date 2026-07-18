@@ -3,6 +3,10 @@ instrument:
   exchange: "BSE"
   lot_size: 20  # PLACEHOLDER — set to the real SENSEX weekly options lot size before live use
 
+execution:
+  mode: "paper"         # "paper" or "live" — live also requires the --live CLI flag AND confirm_live below
+  confirm_live: false   # extra explicit opt-in required before live.run_live will place a single real order
+
 timeframes:
   primary: "minute"
   higher: "5minute"
