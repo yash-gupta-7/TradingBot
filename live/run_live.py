@@ -80,6 +80,7 @@ def main() -> None:
     engine = PaperEngine(
         instrument_token=token, df_1m=df_1m, cfg=cfg, kite=kite,
         order_manager=LiveOrderManager(kite), mode="live",
+        state_path=".live_state.json",
     )
     engine.reconcile_live_position()
     if engine.trading_halted_today:
