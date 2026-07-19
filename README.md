@@ -70,11 +70,17 @@ python -m live.run_live --live
 ### Kill switch
 
 To immediately flatten any open position and halt trading for the rest
-of the day, either click "Flatten & Halt" on the dashboard, or run:
+of the day, run:
 
 ```bash
 python -m live.kill_switch --port 5050
 ```
+
+This just POSTs to the running bot's `POST /api/kill` endpoint, so you can
+also hit that endpoint directly (e.g. `curl -X POST
+http://localhost:5050/api/kill`) if the CLI isn't handy. There is currently
+no kill-switch button on the dashboard itself — use one of the two
+mechanisms above.
 
 The halt persists across a restart (backed by `db/trades.sqlite3`) —
 you must explicitly clear `daily_halt` for the day to resume.
