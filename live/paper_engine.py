@@ -1,4 +1,5 @@
 import logging
+import threading
 from datetime import datetime, time as dt_time
 import pandas as pd
 
@@ -38,6 +39,11 @@ class PaperEngine:
         self.state_path = state_path
         init_db(self.db_path)
         self.open_trade_db_id: int | None = None
+        # Guards _enter_trade / _close_trade so the KiteTicker callback
+        # thread (on_tick) and the Flask request thread (/api/kill) can
+        # never both be mutating self.open_trade / submitting broker
+        # orders at the same time.
+        self._trade_lock = threading.Lock()
 
         self.df_1m = df_1m.copy()
         if hasattr(self.df_1m.index, 'tz') and self.df_1m.index.tz is not None:
@@ -202,48 +208,49 @@ class PaperEngine:
             return None
 
     def _enter_trade(self, signal) -> None:
-        entry_price = self.df_1m["close"].iloc[-1]
-        prev_candle = self.df_1m.iloc[-2]
-        from indicators.atr import calculate_atr
-        atr_value = calculate_atr(self.df_1m, self.cfg["indicators"]["atr_length"]).iloc[-1]
-        stop_price = calculate_stop_loss(
-            signal.direction, prev_candle, atr_value, self.cfg["risk"]["atr_stop_multiplier"], entry_price
-        )
-        qty = calculate_position_size(
-            self.capital, self.cfg["risk"]["risk_pct"], entry_price, stop_price, self.cfg["instrument"]["lot_size"]
-        )
-        if qty <= 0:
-            return
-        target_price = calculate_target(signal.direction, entry_price, stop_price, self.cfg["risk"]["reward_risk_ratio"])
+        with self._trade_lock:
+            entry_price = self.df_1m["close"].iloc[-1]
+            prev_candle = self.df_1m.iloc[-2]
+            from indicators.atr import calculate_atr
+            atr_value = calculate_atr(self.df_1m, self.cfg["indicators"]["atr_length"]).iloc[-1]
+            stop_price = calculate_stop_loss(
+                signal.direction, prev_candle, atr_value, self.cfg["risk"]["atr_stop_multiplier"], entry_price
+            )
+            qty = calculate_position_size(
+                self.capital, self.cfg["risk"]["risk_pct"], entry_price, stop_price, self.cfg["instrument"]["lot_size"]
+            )
+            if qty <= 0:
+                return
+            target_price = calculate_target(signal.direction, entry_price, stop_price, self.cfg["risk"]["reward_risk_ratio"])
 
-        option_symbol = self._resolve_atm_symbol(entry_price, signal.direction)
-        fill = self.order_manager.submit_entry(option_symbol, qty)
-        if fill.status != "filled":
-            logger.warning(f"Entry order for {option_symbol} was {fill.status}; skipping trade")
-            return
+            option_symbol = self._resolve_atm_symbol(entry_price, signal.direction)
+            fill = self.order_manager.submit_entry(option_symbol, qty)
+            if fill.status != "filled":
+                logger.warning(f"Entry order for {option_symbol} was {fill.status}; skipping trade")
+                return
 
-        self.open_trade = Trade(
-            entry_time=self.df_1m.index[-1],
-            direction=signal.direction,
-            entry_price=entry_price,
-            quantity=qty,
-            stop_price=stop_price,
-            target_price=target_price,
-            entry_reasons=signal.reasons,
-            option_symbol=option_symbol,
-            option_entry_price=fill.price,
-        )
-        self.tracker = TrailingStopTracker(
-            signal.direction, entry_price, stop_price, self.cfg["risk"]["breakeven_r"], self.cfg["risk"]["trail_start_r"]
-        )
-        self.trades_today += 1
-        self.open_trade_db_id = insert_trade_entry(
-            self.db_path, self.mode, self.open_trade.entry_time.isoformat(),
-            self.open_trade.direction, option_symbol, float(entry_price),
-            self.open_trade.option_entry_price, qty, float(stop_price), float(target_price),
-        )
-        logger.info(f"ENTERED TRADE: {signal.direction} at {entry_price} (SL: {stop_price}, TG: {target_price})")
-        self._save_state()
+            self.open_trade = Trade(
+                entry_time=self.df_1m.index[-1],
+                direction=signal.direction,
+                entry_price=entry_price,
+                quantity=qty,
+                stop_price=stop_price,
+                target_price=target_price,
+                entry_reasons=signal.reasons,
+                option_symbol=option_symbol,
+                option_entry_price=fill.price,
+            )
+            self.tracker = TrailingStopTracker(
+                signal.direction, entry_price, stop_price, self.cfg["risk"]["breakeven_r"], self.cfg["risk"]["trail_start_r"]
+            )
+            self.trades_today += 1
+            self.open_trade_db_id = insert_trade_entry(
+                self.db_path, self.mode, self.open_trade.entry_time.isoformat(),
+                self.open_trade.direction, option_symbol, float(entry_price),
+                self.open_trade.option_entry_price, qty, float(stop_price), float(target_price),
+            )
+            logger.info(f"ENTERED TRADE: {signal.direction} at {entry_price} (SL: {stop_price}, TG: {target_price})")
+            self._save_state()
 
     def _manage_tick(self, now: pd.Timestamp, price: float):
         old_stop = self.open_trade.stop_price
@@ -276,51 +283,64 @@ class PaperEngine:
             self._close_trade(now, price, "ema_reversal")
 
     def _realized_pnl(self, trade: Trade) -> float:
-        if self.mode == "live" and trade.option_entry_price is not None and trade.option_exit_price is not None:
-            return (trade.option_exit_price - trade.option_entry_price) * trade.quantity
-        return trade.pnl
+        if self.mode == "live" and (trade.option_entry_price is None or trade.option_exit_price is None):
+            logger.warning(
+                f"Live-mode trade ({trade.option_symbol}) is missing an option fill price "
+                f"(entry={trade.option_entry_price}, exit={trade.option_exit_price}); falling back to "
+                "index-point P&L for this trade's contribution to capital."
+            )
+        return trade.realized_pnl(self.mode)
 
     def _close_trade(self, exit_time: pd.Timestamp, exit_price: float, reason: str) -> None:
-        exit_fill = self.order_manager.submit_exit(self.open_trade.option_symbol, self.open_trade.quantity)
-        if exit_fill.status != "filled":
-            logger.critical(
-                f"Exit order failed for {self.open_trade.option_symbol}; leaving position open and "
-                "halting trading for the day pending manual review."
+        with self._trade_lock:
+            if self.open_trade is None:
+                # Another thread (on_tick vs. /api/kill) already closed this
+                # position while we were waiting on the lock -- nothing to do.
+                return
+
+            exit_fill = self.order_manager.submit_exit(self.open_trade.option_symbol, self.open_trade.quantity)
+            if exit_fill.status != "filled":
+                logger.critical(
+                    f"Exit order failed for {self.open_trade.option_symbol}; leaving position open and "
+                    "halting trading for the day pending manual review."
+                )
+                self.trading_halted_today = True
+                self._save_state()
+                return
+
+            self.open_trade.exit_time = exit_time
+            self.open_trade.exit_price = exit_price
+            self.open_trade.exit_reason = reason
+            self.open_trade.option_exit_price = exit_fill.price
+            self.trades.append(self.open_trade)
+
+            pnl = self._realized_pnl(self.open_trade)
+            self.capital += pnl
+            self.consecutive_losses = self.consecutive_losses + 1 if pnl < 0 else 0
+
+            logger.info(f"CLOSED TRADE: {self.open_trade.direction} at {exit_price} | PnL: {pnl:.2f} | Reason: {reason}")
+
+            daily_loss_pct = (
+                (self.day_start_capital - self.capital) / self.day_start_capital * 100
+                if self.day_start_capital else 0
             )
-            self.trading_halted_today = True
+            if self.consecutive_losses >= self.cfg["risk"]["max_consecutive_losses"]:
+                self.trading_halted_today = True
+                logger.info("HALTED: Max consecutive losses reached.")
+            if daily_loss_pct >= self.cfg["risk"]["max_daily_loss_pct"]:
+                self.trading_halted_today = True
+                logger.info("HALTED: Max daily loss reached.")
+
+            if self.open_trade_db_id is not None:
+                update_trade_exit(
+                    self.db_path, self.open_trade_db_id, exit_time.isoformat(),
+                    float(exit_price), self.open_trade.option_exit_price, reason, float(pnl),
+                )
+                self.open_trade_db_id = None
+
+            self.open_trade = None
+            self.tracker = None
             self._save_state()
-            return
-
-        self.open_trade.exit_time = exit_time
-        self.open_trade.exit_price = exit_price
-        self.open_trade.exit_reason = reason
-        self.open_trade.option_exit_price = exit_fill.price
-        self.trades.append(self.open_trade)
-
-        pnl = self._realized_pnl(self.open_trade)
-        self.capital += pnl
-        self.consecutive_losses = self.consecutive_losses + 1 if pnl < 0 else 0
-
-        logger.info(f"CLOSED TRADE: {self.open_trade.direction} at {exit_price} | PnL: {pnl:.2f} | Reason: {reason}")
-
-        daily_loss_pct = (self.day_start_capital - self.capital) / self.day_start_capital * 100
-        if self.consecutive_losses >= self.cfg["risk"]["max_consecutive_losses"]:
-            self.trading_halted_today = True
-            logger.info("HALTED: Max consecutive losses reached.")
-        if daily_loss_pct >= self.cfg["risk"]["max_daily_loss_pct"]:
-            self.trading_halted_today = True
-            logger.info("HALTED: Max daily loss reached.")
-
-        if self.open_trade_db_id is not None:
-            update_trade_exit(
-                self.db_path, self.open_trade_db_id, exit_time.isoformat(),
-                float(exit_price), self.open_trade.option_exit_price, reason, float(pnl),
-            )
-            self.open_trade_db_id = None
-
-        self.open_trade = None
-        self.tracker = None
-        self._save_state()
 
     def _save_state(self):
         import json
@@ -482,6 +502,18 @@ class PaperEngine:
             logger.critical(
                 f"SQLite has an open trade (id={self.open_trade_db_id}, symbol={row['option_symbol']}) but "
                 "the broker reports no matching position. Refusing to auto-trade until this is resolved."
+            )
+            self.trading_halted_today = True
+            self.open_trade = None
+            self.tracker = None
+            return
+
+        broker_qty = abs(broker_position.get("quantity", 0))
+        if broker_qty != row["quantity"]:
+            logger.critical(
+                f"SQLite has an open trade (id={self.open_trade_db_id}, symbol={row['option_symbol']}) "
+                f"logged with quantity={row['quantity']} but the broker reports quantity={broker_qty}. "
+                "Refusing to auto-trade until this is resolved manually."
             )
             self.trading_halted_today = True
             self.open_trade = None

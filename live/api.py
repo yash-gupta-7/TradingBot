@@ -28,8 +28,8 @@ def set_stopped():
     _is_running = False
 
 
-def _trade_to_dict(t):
-    pnl = t.pnl
+def _trade_to_dict(t, mode: str = "paper"):
+    pnl = t.realized_pnl(mode)
     return {
         "entry_time": t.entry_time.strftime("%Y-%m-%d %H:%M") if t.entry_time else None,
         "exit_time": t.exit_time.strftime("%Y-%m-%d %H:%M") if t.exit_time else None,
@@ -86,7 +86,7 @@ def status():
 def trades():
     if _engine is None:
         return jsonify([])
-    return jsonify([_trade_to_dict(t) for t in reversed(_engine.trades)])
+    return jsonify([_trade_to_dict(t, _engine.mode) for t in reversed(_engine.trades)])
 
 
 @app.route("/api/monthly")
@@ -97,20 +97,25 @@ def monthly():
     from collections import defaultdict
     months: dict[str, dict] = defaultdict(lambda: {"pnl": 0.0, "trades": 0, "wins": 0, "losses": 0})
 
-    for t in _engine.trades:
-        if t.exit_time is None or t.pnl is None:
+    # Real (mode-aware) P&L per trade, computed once and reused below so the
+    # dashboard shows actual rupees for live trades, not fabricated
+    # index-point P&L (backtest.engine.Trade.pnl).
+    trade_pnls = [(t, t.realized_pnl(_engine.mode)) for t in _engine.trades]
+
+    for t, pnl in trade_pnls:
+        if t.exit_time is None or pnl is None:
             continue
         month_key = t.exit_time.strftime("%b %Y")
-        months[month_key]["pnl"] += t.pnl
+        months[month_key]["pnl"] += pnl
         months[month_key]["trades"] += 1
-        if t.pnl >= 0:
+        if pnl >= 0:
             months[month_key]["wins"] += 1
         else:
             months[month_key]["losses"] += 1
 
-    total_pnl = sum(t.pnl for t in _engine.trades if t.pnl is not None)
-    wins = sum(1 for t in _engine.trades if t.pnl is not None and t.pnl >= 0)
-    losses = sum(1 for t in _engine.trades if t.pnl is not None and t.pnl < 0)
+    total_pnl = sum(pnl for _, pnl in trade_pnls if pnl is not None)
+    wins = sum(1 for _, pnl in trade_pnls if pnl is not None and pnl >= 0)
+    losses = sum(1 for _, pnl in trade_pnls if pnl is not None and pnl < 0)
 
     return jsonify({
         "months": {k: {"pnl": round(v["pnl"], 2), "trades": v["trades"],

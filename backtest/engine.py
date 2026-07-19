@@ -42,6 +42,16 @@ class Trade:
         mult = 1 if self.direction == "BUY_CALL" else -1
         return (self.exit_price - self.entry_price) * mult * self.quantity
 
+    def realized_pnl(self, mode: str) -> float | None:
+        """P&L that actually matches what moved account capital: for a
+        live-mode trade with both option fill prices recorded, that's the
+        real rupee delta on the option premium. Everything else (paper
+        mode, or a live trade missing an option fill price) falls back to
+        the index-point-based `pnl` property."""
+        if mode == "live" and self.option_entry_price is not None and self.option_exit_price is not None:
+            return (self.option_exit_price - self.option_entry_price) * self.quantity
+        return self.pnl
+
 
 class BacktestEngine:
     def __init__(
